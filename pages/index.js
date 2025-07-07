@@ -95,7 +95,7 @@ const TimeCard = ({
                 ref={inputRef}
                 type="time"
                 defaultValue={isValid ? time : ''}
-                placeholder="__:__"
+                placeholder="set time"
                 onBlur={handleBlur}
                 onKeyDown={(e) => e.key === 'Enter' && handleBlur(e)}
                 className="w-full h-full bg-transparent text-white text-6xl font-mono text-center outline-none"
@@ -126,8 +126,8 @@ export default function Home() {
   const [selectedProjectId, setSelectedProjectId] = useState(null);
 
   // default "empty" times
-  const [startTime, setStartTime] = useState('__:__');
-  const [endTime, setEndTime] = useState('__:__');
+  const [startTime, setStartTime] = useState('set time');
+  const [endTime, setEndTime] = useState('set time');
 
   const [stats, setStats] = useState({ weekly: {}, monthly: {}, average: {} });
   const [monthData, setMonthData] = useState([]);
@@ -171,8 +171,8 @@ export default function Home() {
           setStartTime(data.log.startTime);
           setEndTime(data.log.endTime);
         } else {
-          setStartTime('__:__');
-          setEndTime('__:__');
+          setStartTime('set time');
+          setEndTime('set time');
         }
         setStats(data.stats);
         setMonthData(
