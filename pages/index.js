@@ -43,7 +43,7 @@ const RoundedBar = ({ fill, x, y, width, height }) => {
   );
 };
 
-// Time card with immediate focus & showPicker on mobile
+// Time card with immediate focus on edit
 const TimeCard = ({
   label,
   time,
@@ -52,17 +52,15 @@ const TimeCard = ({
   isEditing,
   setIsEditing
 }) => {
-  const inputRef = useRef(null);
-
-  // When we enter editing mode, focus & open the picker immediately
-  useEffect(() => {
-    if (isEditing && inputRef.current) {
-      inputRef.current.focus();
-      if (typeof inputRef.current.showPicker === 'function') {
-        inputRef.current.showPicker();
-      }
+  // Use a callback ref to focus the input as soon as it's mounted.
+  // We cannot call .showPicker() here due to browser security restrictions,
+  // as it's not triggered directly by a user gesture. However, .focus() is
+  // allowed and provides a good UX.
+  const inputCallbackRef = (inputElement) => {
+    if (inputElement) {
+      inputElement.focus();
     }
-  }, [isEditing]);
+  };
 
   const handleBlur = (e) => {
     setTime(e.target.value);
@@ -92,7 +90,7 @@ const TimeCard = ({
               className="w-full h-full"
             >
               <input
-                ref={inputRef}
+                ref={inputCallbackRef}
                 type="time"
                 defaultValue={isValid ? time : ''}
                 placeholder="set time"
