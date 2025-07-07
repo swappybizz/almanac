@@ -14,7 +14,7 @@ export default function LoginPage() {
       {/* Top Brand */}
       <div className="z-10 flex flex-col items-center mt-20">
         <h1 className="text-5xl font-bold text-white tracking-tight flex items-center gap-3 animate-fadein-slow">
-          Almanac
+          Time Dalo
           <FiClock className="text-purple-500" size={32} />
         </h1>
         <p className="mt-4 text-lg text-neutral-300 font-medium animate-fadein-delay">
