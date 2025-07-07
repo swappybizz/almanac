@@ -17,7 +17,7 @@ import {
   FiChevronLeft,
   FiChevronRight,
   FiChevronDown,
-  FiPlus
+  FiPlus,
 } from 'react-icons/fi';
 import { BarChart, Bar, Cell, ResponsiveContainer } from 'recharts';
 
@@ -431,6 +431,12 @@ export default function Home() {
             className="flex justify-center items-center text-neutral-500 hover:text-white transition-colors h-full"
           >
             <FiGrid size={24} />
+          </button>
+          <button
+            onClick={() => (window.location.href = '/settings')}
+            className="flex justify-center items-center text-neutral-500 hover:text-white transition-colors h-full"
+          >
+            <FiSettings size={24} />
           </button>
           <div className="h-8 border-l border-neutral-700" />
           <div>
