@@ -21,7 +21,7 @@ import {
 } from 'react-icons/fi';
 import { BarChart, Bar, Cell, ResponsiveContainer } from 'recharts';
 
-// Rounded bar shape (unchanged)
+// Rounded bar shape
 const RoundedBar = ({ fill, x, y, width, height }) => {
   if (height <= 0) return null;
   const r = 6;
@@ -43,14 +43,20 @@ const RoundedBar = ({ fill, x, y, width, height }) => {
   );
 };
 
-// Time card component, now shows "__:__" by default and only saves valid times
-const TimeCard = ({ label, time, setTime, accentColor, isEditing, setIsEditing }) => {
+// Time card component
+const TimeCard = ({
+  label,
+  time,
+  setTime,
+  accentColor,
+  isEditing,
+  setIsEditing
+}) => {
   const handleBlur = (e) => {
     setTime(e.target.value);
     setIsEditing(false);
   };
 
-  // only allow HH:MM strings into the input
   const isValid = /^\d{2}:\d{2}$/.test(time);
 
   return (
@@ -107,7 +113,7 @@ export default function Home() {
   const [projects, setProjects] = useState([]);
   const [selectedProjectId, setSelectedProjectId] = useState(null);
 
-  // Default to "__:__" until a log is fetched
+  // default "empty" times
   const [startTime, setStartTime] = useState('__:__');
   const [endTime, setEndTime] = useState('__:__');
 
@@ -120,7 +126,7 @@ export default function Home() {
   const isInitialLoad = useRef(false);
   const dateInputRef = useRef(null);
 
-  // Fetch projects on mount
+  // load projects
   useEffect(() => {
     (async () => {
       try {
@@ -131,9 +137,7 @@ export default function Home() {
           if (data.length > 0) {
             setSelectedProjectId(data[0]._id);
           } else {
-            // no projects, stop loading spinner
             setIsLoading(false);
-            alert('No projects found. Please add a project by pressing the "+" button. next to yout name.');
           }
         }
       } catch (e) {
@@ -142,7 +146,7 @@ export default function Home() {
     })();
   }, []);
 
-  // Fetch the log, stats, and month data for a given date & project
+  // fetch daily log + stats + month
   const fetchLogData = async (date, projectId) => {
     setIsLoading(true);
     isInitialLoad.current = false;
@@ -155,7 +159,6 @@ export default function Home() {
           setStartTime(data.log.startTime);
           setEndTime(data.log.endTime);
         } else {
-          // no log yet
           setStartTime('__:__');
           setEndTime('__:__');
         }
@@ -175,14 +178,14 @@ export default function Home() {
     }
   };
 
-  // when date or project changes, re-fetch
+  // when date or project changes
   useEffect(() => {
     if (selectedProjectId) {
       fetchLogData(currentDate, selectedProjectId);
     }
   }, [currentDate, selectedProjectId]);
 
-  // Save on valid time changes — only if we have a project and valid HH:MM
+  // save on valid time edits only if we have a project
   useEffect(() => {
     if (
       !isInitialLoad.current ||
@@ -208,7 +211,6 @@ export default function Home() {
             endTime,
           }),
         });
-        // refresh after save
         fetchLogData(currentDate, selectedProjectId);
       } catch (e) {
         console.error(e);
@@ -216,7 +218,7 @@ export default function Home() {
     })();
   }, [startTime, endTime, selectedProjectId, projects.length]);
 
-  // Calculate duration only when both times are valid HH:MM
+  // compute today's duration
   const [hours, minutes] = useMemo(() => {
     const timePattern = /^\d{2}:\d{2}$/;
     if (!timePattern.test(startTime) || !timePattern.test(endTime)) {
@@ -229,13 +231,19 @@ export default function Home() {
     return [Math.floor(diff / 3600000), Math.floor((diff % 3600000) / 60000)];
   }, [startTime, endTime]);
 
-  // navigation and date pickers
-  const handleDateChange = (e) => setCurrentDate(new Date(`${e.target.value}T00:00:00`));
+  // navigation
+  const handleDateChange = (e) =>
+    setCurrentDate(new Date(`${e.target.value}T00:00:00`));
   const prevDay = () => setCurrentDate((d) => subDays(d, 1));
   const nextDay = () => setCurrentDate((d) => addDays(d, 1));
-  const onBarClick = (_, idx) => setCurrentDate(monthData[idx].date);
 
-  // add new project
+  // SAFETY‐CHECKED click handler
+  const onBarClick = (data, idx) => {
+    if (typeof idx !== 'number' || !monthData[idx]) return;
+    setCurrentDate(monthData[idx].date);
+  };
+
+  // add a project
   const handleAddProject = async () => {
     const name = window.prompt('Enter a new project name');
     if (!name) return;
@@ -262,11 +270,19 @@ export default function Home() {
       }`}
     >
       <header className="flex items-center justify-between px-4 pt-6 text-xl font-medium text-neutral-400">
-        <button onClick={prevDay} className="p-2 rounded-full hover:bg-neutral-800 transition-colors">
+        <button
+          onClick={prevDay}
+          className="p-2 rounded-full hover:bg-neutral-800 transition-colors"
+        >
           <FiChevronLeft size={24} />
         </button>
-        <div className="relative text-center cursor-pointer" onClick={() => dateInputRef.current.click()}>
-          <h1 className="text-stone-200">{format(currentDate, 'EEE, do MMM')}</h1>
+        <div
+          className="relative text-center cursor-pointer"
+          onClick={() => dateInputRef.current.click()}
+        >
+          <h1 className="text-stone-200">
+            {format(currentDate, 'EEE, do MMM')}
+          </h1>
           <input
             type="date"
             ref={dateInputRef}
@@ -276,20 +292,24 @@ export default function Home() {
             style={{ colorScheme: 'dark' }}
           />
         </div>
-        <button onClick={nextDay} className="p-2 rounded-full hover:bg-neutral-800 transition-colors">
+        <button
+          onClick={nextDay}
+          className="p-2 rounded-full hover:bg-neutral-800 transition-colors"
+        >
           <FiChevronRight size={24} />
         </button>
       </header>
 
       <main className="flex-1 flex flex-col justify-start px-4 gap-3 pt-4 overflow-y-auto">
         <div className="flex justify-between items-center gap-4">
-          <p className="font-semibold text-neutral-300 truncate">{user?.fullName}</p>
+          <p className="font-semibold text-neutral-300 truncate">
+            {user?.fullName}
+          </p>
           <div className="relative w-48 flex items-center">
             <select
               value={selectedProjectId || ''}
               onChange={(e) => setSelectedProjectId(e.target.value)}
               className="w-full bg-neutral-900 border border-neutral-800 rounded-lg py-2 pl-3 pr-8 text-white appearance-none focus:outline-none focus:border-purple-500 transition"
-              disabled={projects.length === 0}
             >
               {projects.map((p) => (
                 <option key={p._id} value={p._id}>
@@ -299,20 +319,18 @@ export default function Home() {
             </select>
             <button
               onClick={handleAddProject}
-              className={`absolute right-3 top-1/2 -translate-y-1/2 ${
-                projects.length === 0
-                  ? 'text-red-500 scale-150 animate-pulse'
-                  : 'text-neutral-500 hover:text-white'
-              }`}
+              className="absolute right-3 top-1/2 -translate-y-1/2"
               title="Add project"
             >
-              <FiPlus size={20} />
+              <FiPlus
+                size={20}
+                className="text-neutral-500 hover:text-white"
+              />
             </button>
             <FiChevronDown className="absolute right-8 top-1/2 -translate-y-1/2 text-neutral-500 pointer-events-none" />
           </div>
         </div>
 
-        {/* Time cards */}
         <TimeCard
           label="Start Time"
           time={startTime}
@@ -330,17 +348,16 @@ export default function Home() {
           setIsEditing={setIsEditingEnd}
         />
 
-        {/* Today's total */}
         <div className="bg-neutral-900/50 rounded-2xl p-3 border border-neutral-800 text-center">
           <p className="text-xs text-neutral-400 mb-1">TODAY'S TOTAL</p>
           <p className="text-4xl font-bold text-purple-400">
             {hours}
-            <span className="text-2xl font-medium text-purple-300/80">h</span> {String(minutes).padStart(2, '0')}
+            <span className="text-2xl font-medium text-purple-300/80">h</span>{' '}
+            {String(minutes).padStart(2, '0')}
             <span className="text-2xl font-medium text-purple-300/80">m</span>
           </p>
         </div>
 
-        {/* Stats */}
         <div className="flex items-center justify-around bg-neutral-900/50 rounded-2xl p-3 border border-neutral-800">
           <div className="text-center">
             <p className="text-xl font-bold">
@@ -368,7 +385,6 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Monthly bar chart */}
         <div className="bg-neutral-900/50 rounded-2xl p-3 border border-neutral-800 mt-1">
           <AnimatePresence mode="wait">
             <motion.div
@@ -377,18 +393,26 @@ export default function Home() {
               animate={{ opacity: 1, y: 0 }}
               className="h-6 text-center text-xs text-neutral-400 mb-2"
             >
-              {monthData.find((d) => isSameDay(d.date, currentDate))?.hours.toFixed(1)} hours on{' '}
-              {format(currentDate, 'do MMM')}
+              {monthData.find((d) => isSameDay(d.date, currentDate))?.hours.toFixed(1)}{' '}
+              hours on {format(currentDate, 'do MMM')}
             </motion.div>
           </AnimatePresence>
           <div className="w-full h-20">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={monthData} barGap={2} onClick={onBarClick}>
-                <Bar dataKey="hours" shape={<RoundedBar />}>
+              <BarChart data={monthData} barGap={2}>
+                <Bar
+                  dataKey="hours"
+                  shape={<RoundedBar />}
+                  onClick={onBarClick}
+                >
                   {monthData.map((entry, idx) => (
                     <Cell
                       key={idx}
-                      fill={isSameDay(entry.date, currentDate) ? '#a855f7' : '#404040'}
+                      fill={
+                        isSameDay(entry.date, currentDate)
+                          ? '#a855f7'
+                          : '#404040'
+                      }
                       className="cursor-pointer transition-colors"
                     />
                   ))}
@@ -405,14 +429,14 @@ export default function Home() {
             <FiClock size={26} />
           </button>
           <button
-            onClick={() => window.location.href = '/calendar'}
+            onClick={() => (window.location.href = '/calendar')}
             className="flex-1 flex justify-center items-center text-neutral-500 hover:text-white transition-colors h-full"
           >
             <FiGrid size={24} />
           </button>
-          <button className="flex-1 flex justify-center items-center text-neutral-500 hover:text-white transition-colors h-full">
+          {/* <button className="flex-1 flex justify-center items-center text-neutral-500 hover:text-white transition-colors h-full">
             <FiSettings size={24} />
-          </button>
+          </button> */}
           <div className="h-8 border-l border-neutral-700" />
           <div className="px-4">
             <UserButton afterSignOutUrl="/" />

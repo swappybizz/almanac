@@ -195,7 +195,6 @@ export default function CalendarPage() {
       const res = await fetch(`/api/getTimeLog?date=${iso}&projectId=${projectId}`);
       const json = await res.json();
       if (res.ok) {
-        // API returns dailyLogs: [{ date: 'YYYY-MM-DD', hours }]
         setMonthData(
           json.dailyLogs.map(d => ({
             date: parseISO(d.date),
@@ -208,14 +207,14 @@ export default function CalendarPage() {
     })();
   }, [viewDate, projectId]);
 
-  const daysInMonth = getDaysInMonth(viewDate);
+  // build calendar grid
+  const daysInMonth  = getDaysInMonth(viewDate);
   const firstOfMonth = startOfMonth(viewDate);
-  // shift so Monday=0 … Sunday=6
-  const dayOffset = (firstOfMonth.getDay() + 6) % 7;
-  const cells = [
+  const dayOffset    = (firstOfMonth.getDay() + 6) % 7; // Monday=0 … Sunday=6
+  const cells        = [
     ...Array(dayOffset).fill(null),
     ...Array.from({ length: daysInMonth }, (_, i) =>
-      addMonths(firstOfMonth, 0) /* clone */ && new Date(firstOfMonth.getFullYear(), firstOfMonth.getMonth(), i + 1)
+      new Date(firstOfMonth.getFullYear(), firstOfMonth.getMonth(), i + 1)
     )
   ];
   const weeks = [];
@@ -223,10 +222,45 @@ export default function CalendarPage() {
     weeks.push(cells.slice(i, i + 7));
   }
 
+  // navigation handlers
   const prevMonth = () => setViewDate(d => subMonths(d, 1));
   const nextMonth = () => setViewDate(d => addMonths(d, 1));
-  const prevYear = () => setViewDate(d => subYears(d, 1));
-  const nextYear = () => setViewDate(d => addYears(d, 1));
+  const prevYear  = () => setViewDate(d => subYears(d, 1));
+  const nextYear  = () => setViewDate(d => addYears(d, 1));
+
+  // ---- Excel Export ----
+  const exportToExcel = async () => {
+    if (!projectId) return;
+    // import the module (no .default)
+    const XLSX = await import('xlsx');
+    const proj = projects.find(p => p._id === projectId);
+    const projectName = proj?.name || 'Project';
+    const monthLabel = format(viewDate, 'MMMM yyyy');
+    const totalH = stats.monthly.hours + stats.monthly.minutes / 60;
+
+    // build rows
+    const rows = [];
+    rows.push(['Project', projectName]);
+    rows.push(['Month', monthLabel]);
+    rows.push(['Total Hours', totalH.toFixed(2)]);
+    rows.push([]);
+    rows.push(['Date', 'Hours']);
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      const date = new Date(viewDate.getFullYear(), viewDate.getMonth(), d);
+      const entry = monthData.find(e => isSameDay(e.date, date));
+      rows.push([
+        format(date, 'yyyy-MM-dd'),
+        entry ? entry.hours : 0
+      ]);
+    }
+
+    // generate sheet & file
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Log');
+    XLSX.writeFile(wb, `${projectName}_${monthLabel}_Log.xlsx`);
+  };
 
   return (
     <div className="bg-neutral-950 text-white w-full min-h-screen flex flex-col">
@@ -310,8 +344,9 @@ export default function CalendarPage() {
         )}
       </main>
 
-      {/* Floating Export button */}
+      {/* Export Excel button */}
       <button
+        onClick={exportToExcel}
         className="fixed bottom-24 right-6 bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-full shadow-lg"
       >
         Export Excel
@@ -321,17 +356,17 @@ export default function CalendarPage() {
       <footer className="flex items-center justify-center p-4 mt-auto">
         <div className="flex items-center bg-neutral-900 rounded-full h-16 w-full max-w-xs shadow-lg border border-neutral-800">
           <button
-          onClick={() => window.location.href = '/'}
-          
-          className="flex-1 flex justify-center items-center text-neutral-500 h-full">
+            onClick={() => window.location.href = '/'}
+            className="flex-1 flex justify-center items-center text-neutral-500 h-full"
+          >
             <FiClock size={26} />
           </button>
-          <button className="flex-1 flex justify-center items-center text-purple-400  hover:text-white transition h-full">
+          <button className="flex-1 flex justify-center items-center text-purple-400 hover:text-white transition h-full">
             <FiGrid size={24} />
           </button>
-          <button className="flex-1 flex justify-center items-center text-neutral-500 hover:text-white transition h-full">
+          {/* <button className="flex-1 flex justify-center items-center text-neutral-500 hover:text-white transition h-full">
             <FiSettings size={24} />
-          </button>
+          </button> */}
           <div className="h-8 border-l border-neutral-700" />
           <div className="px-4">
             <UserButton afterSignOutUrl="/" />
@@ -347,15 +382,16 @@ export default function CalendarPage() {
             projectId={projectId}
             close={() => setDayModalDate(null)}
             refresh={() => {
-              // re-fetch after save
               const iso = formatISO(viewDate, { representation: 'date' });
-              fetch(`/api/getTimeLog?date=${iso}&projectId=${projectId}`).then(r => r.json()).then(json => {
-                setMonthData(json.dailyLogs.map(d => ({
-                  date: parseISO(d.date),
-                  hours: d.hours
-                })));
-                setStats(json.stats);
-              });
+              fetch(`/api/getTimeLog?date=${iso}&projectId=${projectId}`)
+                .then(r => r.json())
+                .then(json => {
+                  setMonthData(json.dailyLogs.map(d => ({
+                    date: parseISO(d.date),
+                    hours: d.hours
+                  })));
+                  setStats(json.stats);
+                });
             }}
           />
         )}
