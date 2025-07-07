@@ -18,7 +18,7 @@ export default function LoginPage() {
           <FiClock className="text-purple-500" size={32} />
         </h1>
         <p className="mt-4 text-lg text-neutral-300 font-medium animate-fadein-delay">
-          Logg inn for å spore tid og prosjekter dine
+          Log yout Time & Export to Excel
           <FiGrid className="inline ml-2 text-purple-500" size={22} />
         </p>
       </div>
