@@ -335,26 +335,33 @@ export default function CalendarPage() {
       >
         Export Excel
       </button>
-      <footer className="flex items-center justify-center p-4 mt-auto">
-        <div className="flex items-center bg-neutral-900 rounded-full h-16 w-full max-w-xs shadow-lg border border-neutral-800">
-          <button
-            onClick={() => window.location.href = '/'}
-            className="flex-1 flex justify-center items-center text-neutral-500 h-full"
-          >
-            <FiClock size={26} />
-          </button>
-          <button className="flex-1 flex justify-center items-center text-purple-400 hover:text-white transition h-full">
-            <FiGrid size={24} />
-          </button>
-          {/* <button className="flex-1 flex justify-center items-center text-neutral-500 hover:text-white transition h-full">
-            <FiSettings size={24} />
-          </button> */}
-          <div className="h-8 border-l border-neutral-700" />
-          <div className="px-4">
-            <UserButton afterSignOutUrl="/" />
-          </div>
-        </div>
-      </footer>
+<footer className="flex items-center justify-center p-4 mt-auto">
+  <div className="flex items-center gap-x-6 bg-neutral-900 rounded-full h-16 shadow-lg border border-neutral-800 px-6">
+    {/* Button 1 */}
+    <button
+    onClick={() => (window.location.href = '/')}
+    className="flex justify-center items-center text-neutral-500 hover:text-white transition-colors h-full">
+      <FiClock size={26} />
+    </button>
+
+    {/* Button 2 */}
+    <button
+      
+      className="flex justify-center items-center text-purple-400 h-full"
+      
+    >
+      <FiGrid size={24} />
+    </button>
+
+    {/* Divider */}
+    <div className="h-8 border-l border-neutral-700" />
+
+    {/* User Button */}
+    <div>
+      <UserButton afterSignOutUrl="/" />
+    </div>
+  </div>
+</footer>
       <AnimatePresence>
         {dayModalDate && (
           <DayModal

@@ -275,9 +275,8 @@ export default function Home() {
 
   return (
     <div
-      className={`bg-neutral-950 text-white font-sans w-full h-screen max-w-md mx-auto flex flex-col overflow-hidden transition-opacity duration-300 ${
-        isLoading ? 'opacity-50' : 'opacity-100'
-      }`}
+      className={`bg-neutral-950 text-white font-sans w-full h-screen max-w-md mx-auto flex flex-col overflow-hidden transition-opacity duration-300 ${isLoading ? 'opacity-50' : 'opacity-100'
+        }`}
     >
       <header className="flex items-center justify-between px-4 pt-6 text-xl font-medium text-neutral-400">
         <button
@@ -421,20 +420,20 @@ export default function Home() {
           </div>
         </div>
       </main>
-
       <footer className="flex items-center justify-center p-4 mt-auto">
-        <div className="flex items-center bg-neutral-900 rounded-full h-16 w-full max-w-xs shadow-lg border border-neutral-800">
-          <button className="flex-1 flex justify-center items-center text-purple-400 h-full">
+
+        <div className="flex items-center gap-x-6 bg-neutral-900 rounded-full h-16 shadow-lg border border-neutral-800 px-6">
+          <button className="flex justify-center items-center text-purple-400 h-full">
             <FiClock size={26} />
           </button>
           <button
-            onClick={() => window.location.href = '/calendar'}
-            className="flex-1 flex justify-center items-center text-neutral-500 hover:text-white transition-colors h-full"
+            onClick={() => (window.location.href = '/calendar')}
+            className="flex justify-center items-center text-neutral-500 hover:text-white transition-colors h-full"
           >
             <FiGrid size={24} />
           </button>
           <div className="h-8 border-l border-neutral-700" />
-          <div className="px-4">
+          <div>
             <UserButton afterSignOutUrl="/" />
           </div>
         </div>
