@@ -21,7 +21,7 @@ import {
 } from 'react-icons/fi';
 import { BarChart, Bar, Cell, ResponsiveContainer } from 'recharts';
 
-// Rounded bar shape
+// Rounded bar shape (unchanged)
 const RoundedBar = ({ fill, x, y, width, height }) => {
   if (height <= 0) return null;
   const r = 6;
@@ -43,7 +43,7 @@ const RoundedBar = ({ fill, x, y, width, height }) => {
   );
 };
 
-// Time card component
+// Time card with immediate focus & showPicker on mobile
 const TimeCard = ({
   label,
   time,
@@ -52,6 +52,18 @@ const TimeCard = ({
   isEditing,
   setIsEditing
 }) => {
+  const inputRef = useRef(null);
+
+  // When we enter editing mode, focus & open the picker immediately
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+      if (typeof inputRef.current.showPicker === 'function') {
+        inputRef.current.showPicker();
+      }
+    }
+  }, [isEditing]);
+
   const handleBlur = (e) => {
     setTime(e.target.value);
     setIsEditing(false);
@@ -80,12 +92,12 @@ const TimeCard = ({
               className="w-full h-full"
             >
               <input
+                ref={inputRef}
                 type="time"
                 defaultValue={isValid ? time : ''}
                 placeholder="__:__"
                 onBlur={handleBlur}
                 onKeyDown={(e) => e.key === 'Enter' && handleBlur(e)}
-                autoFocus
                 className="w-full h-full bg-transparent text-white text-6xl font-mono text-center outline-none"
                 style={{ colorScheme: 'dark' }}
               />
@@ -322,10 +334,7 @@ export default function Home() {
               className="absolute right-3 top-1/2 -translate-y-1/2"
               title="Add project"
             >
-              <FiPlus
-                size={20}
-                className="text-neutral-500 hover:text-white"
-              />
+              <FiPlus size={20} className="text-neutral-500 hover:text-white" />
             </button>
             <FiChevronDown className="absolute right-8 top-1/2 -translate-y-1/2 text-neutral-500 pointer-events-none" />
           </div>
@@ -400,19 +409,11 @@ export default function Home() {
           <div className="w-full h-20">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={monthData} barGap={2}>
-                <Bar
-                  dataKey="hours"
-                  shape={<RoundedBar />}
-                  onClick={onBarClick}
-                >
+                <Bar dataKey="hours" shape={<RoundedBar />} onClick={onBarClick}>
                   {monthData.map((entry, idx) => (
                     <Cell
                       key={idx}
-                      fill={
-                        isSameDay(entry.date, currentDate)
-                          ? '#a855f7'
-                          : '#404040'
-                      }
+                      fill={isSameDay(entry.date, currentDate) ? '#a855f7' : '#404040'}
                       className="cursor-pointer transition-colors"
                     />
                   ))}
@@ -429,14 +430,11 @@ export default function Home() {
             <FiClock size={26} />
           </button>
           <button
-            onClick={() => (window.location.href = '/calendar')}
+            onClick={() => window.location.href = '/calendar'}
             className="flex-1 flex justify-center items-center text-neutral-500 hover:text-white transition-colors h-full"
           >
             <FiGrid size={24} />
           </button>
-          {/* <button className="flex-1 flex justify-center items-center text-neutral-500 hover:text-white transition-colors h-full">
-            <FiSettings size={24} />
-          </button> */}
           <div className="h-8 border-l border-neutral-700" />
           <div className="px-4">
             <UserButton afterSignOutUrl="/" />
