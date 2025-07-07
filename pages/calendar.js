@@ -221,14 +221,10 @@ export default function CalendarPage() {
   for (let i = 0; i < cells.length; i += 7) {
     weeks.push(cells.slice(i, i + 7));
   }
-
-  // navigation handlers
   const prevMonth = () => setViewDate(d => subMonths(d, 1));
   const nextMonth = () => setViewDate(d => addMonths(d, 1));
   const prevYear  = () => setViewDate(d => subYears(d, 1));
   const nextYear  = () => setViewDate(d => addYears(d, 1));
-
-  // ---- Excel Export ----
   const exportToExcel = async () => {
     if (!projectId) return;
     // import the module (no .default)
@@ -237,8 +233,6 @@ export default function CalendarPage() {
     const projectName = proj?.name || 'Project';
     const monthLabel = format(viewDate, 'MMMM yyyy');
     const totalH = stats.monthly.hours + stats.monthly.minutes / 60;
-
-    // build rows
     const rows = [];
     rows.push(['Project', projectName]);
     rows.push(['Month', monthLabel]);
@@ -254,8 +248,6 @@ export default function CalendarPage() {
         entry ? entry.hours : 0
       ]);
     }
-
-    // generate sheet & file
     const ws = XLSX.utils.aoa_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Log');
@@ -264,12 +256,10 @@ export default function CalendarPage() {
 
   return (
     <div className="bg-neutral-950 text-white w-full min-h-screen flex flex-col">
-      {/* Header */}
       <header className="flex items-center justify-between px-4 pt-6">
         <button
           onClick={() => router.back()}
-          className="p-2 rounded-full hover:bg-neutral-800 transition"
-        >
+          className="p-2 rounded-full hover:bg-neutral-800 transition">
           <FiArrowLeft size={24} />
         </button>
         <div className="flex items-center space-x-2 text-neutral-300">
@@ -294,8 +284,6 @@ export default function CalendarPage() {
           <FiBarChart size={24} />
         </button>
       </header>
-
-      {/* Project selector */}
       <div className="px-4 mt-4">
         <div className="relative w-full">
           <select
@@ -312,8 +300,6 @@ export default function CalendarPage() {
           <FiChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500" />
         </div>
       </div>
-
-      {/* Calendar grid */}
       <main className="flex-1 px-4 py-6 overflow-y-auto">
         {loading ? (
           <p className="text-center">Loading…</p>
@@ -343,16 +329,12 @@ export default function CalendarPage() {
           </div>
         )}
       </main>
-
-      {/* Export Excel button */}
       <button
         onClick={exportToExcel}
         className="fixed bottom-24 right-6 bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-full shadow-lg"
       >
         Export Excel
       </button>
-
-      {/* Footer */}
       <footer className="flex items-center justify-center p-4 mt-auto">
         <div className="flex items-center bg-neutral-900 rounded-full h-16 w-full max-w-xs shadow-lg border border-neutral-800">
           <button
@@ -373,8 +355,6 @@ export default function CalendarPage() {
           </div>
         </div>
       </footer>
-
-      {/* Modals */}
       <AnimatePresence>
         {dayModalDate && (
           <DayModal
