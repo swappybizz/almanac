@@ -21,7 +21,7 @@ import {
 } from 'react-icons/fi';
 import { BarChart, Bar, Cell, ResponsiveContainer } from 'recharts';
 
-// Rounded bar shape (unchanged)
+// Rounded bar shape
 const RoundedBar = ({ fill, x, y, width, height }) => {
   if (height <= 0) return null;
   const r = 6;
@@ -43,16 +43,12 @@ const RoundedBar = ({ fill, x, y, width, height }) => {
   );
 };
 
-// Time card component, now shows "__:__" by default and only saves valid times
+// Time card component
 const TimeCard = ({ label, time, setTime, accentColor, isEditing, setIsEditing }) => {
   const handleBlur = (e) => {
     setTime(e.target.value);
     setIsEditing(false);
   };
-
-  // only allow HH:MM strings into the input
-  const isValid = /^\d{2}:\d{2}$/.test(time);
-
   return (
     <motion.div
       layout
@@ -75,8 +71,7 @@ const TimeCard = ({ label, time, setTime, accentColor, isEditing, setIsEditing }
             >
               <input
                 type="time"
-                defaultValue={isValid ? time : ''}
-                placeholder="__:__"
+                defaultValue={time}
                 onBlur={handleBlur}
                 onKeyDown={(e) => e.key === 'Enter' && handleBlur(e)}
                 autoFocus
@@ -106,21 +101,17 @@ export default function Home() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [projects, setProjects] = useState([]);
   const [selectedProjectId, setSelectedProjectId] = useState(null);
-
-  // Default to "__:__" until a log is fetched
-  const [startTime, setStartTime] = useState('__:__');
-  const [endTime, setEndTime] = useState('__:__');
-
+  const [startTime, setStartTime] = useState('08:00');
+  const [endTime, setEndTime] = useState('16:30');
   const [stats, setStats] = useState({ weekly: {}, monthly: {}, average: {} });
   const [monthData, setMonthData] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isEditingStart, setIsEditingStart] = useState(false);
   const [isEditingEnd, setIsEditingEnd] = useState(false);
-
   const isInitialLoad = useRef(false);
   const dateInputRef = useRef(null);
 
-  // Fetch projects on mount
+  // Fetch projects
   useEffect(() => {
     (async () => {
       try {
@@ -128,13 +119,8 @@ export default function Home() {
         const data = await res.json();
         if (res.ok) {
           setProjects(data);
-          if (data.length > 0) {
-            setSelectedProjectId(data[0]._id);
-          } else {
-            // no projects, stop loading spinner
-            setIsLoading(false);
-            alert('No projects found. Please add a project by pressing the "+" button. next to yout name.');
-          }
+          if (data.length) setSelectedProjectId(data[0]._id);
+          else setIsLoading(false);
         }
       } catch (e) {
         console.error(e);
@@ -142,7 +128,7 @@ export default function Home() {
     })();
   }, []);
 
-  // Fetch the log, stats, and month data for a given date & project
+  // Fetch today's log, stats & month data
   const fetchLogData = async (date, projectId) => {
     setIsLoading(true);
     isInitialLoad.current = false;
@@ -155,9 +141,8 @@ export default function Home() {
           setStartTime(data.log.startTime);
           setEndTime(data.log.endTime);
         } else {
-          // no log yet
-          setStartTime('__:__');
-          setEndTime('__:__');
+          setStartTime('08:00');
+          setEndTime('16:30');
         }
         setStats(data.stats);
         setMonthData(
@@ -175,27 +160,16 @@ export default function Home() {
     }
   };
 
-  // when date or project changes, re-fetch
+  // Trigger whenever date or project changes
   useEffect(() => {
     if (selectedProjectId) {
       fetchLogData(currentDate, selectedProjectId);
     }
   }, [currentDate, selectedProjectId]);
 
-  // Save on valid time changes — only if we have a project and valid HH:MM
+  // Save on start/end time change
   useEffect(() => {
-    if (
-      !isInitialLoad.current ||
-      !selectedProjectId ||
-      projects.length === 0
-    ) {
-      return;
-    }
-    const timePattern = /^\d{2}:\d{2}$/;
-    if (!timePattern.test(startTime) || !timePattern.test(endTime)) {
-      return;
-    }
-
+    if (!isInitialLoad.current || !selectedProjectId) return;
     (async () => {
       try {
         await fetch('/api/saveTimeLog', {
@@ -214,28 +188,9 @@ export default function Home() {
         console.error(e);
       }
     })();
-  }, [startTime, endTime, selectedProjectId, projects.length]);
-
-  // Calculate duration only when both times are valid HH:MM
-  const [hours, minutes] = useMemo(() => {
-    const timePattern = /^\d{2}:\d{2}$/;
-    if (!timePattern.test(startTime) || !timePattern.test(endTime)) {
-      return [0, 0];
-    }
-    const s = new Date(`1970-01-01T${startTime}:00`);
-    let e = new Date(`1970-01-01T${endTime}:00`);
-    if (e < s) e.setDate(e.getDate() + 1);
-    const diff = e - s;
-    return [Math.floor(diff / 3600000), Math.floor((diff % 3600000) / 60000)];
   }, [startTime, endTime]);
 
-  // navigation and date pickers
-  const handleDateChange = (e) => setCurrentDate(new Date(`${e.target.value}T00:00:00`));
-  const prevDay = () => setCurrentDate((d) => subDays(d, 1));
-  const nextDay = () => setCurrentDate((d) => addDays(d, 1));
-  const onBarClick = (_, idx) => setCurrentDate(monthData[idx].date);
-
-  // add new project
+  // Add new project
   const handleAddProject = async () => {
     const name = window.prompt('Enter a new project name');
     if (!name) return;
@@ -254,6 +209,20 @@ export default function Home() {
       console.error(e);
     }
   };
+
+  // Calculate today's duration
+  const [hours, minutes] = useMemo(() => {
+    const s = new Date(`1970-01-01T${startTime}:00`);
+    let e = new Date(`1970-01-01T${endTime}:00`);
+    if (e < s) e.setDate(e.getDate() + 1);
+    const diff = e - s;
+    return [Math.floor(diff / 3600000), Math.floor((diff % 3600000) / 60000)];
+  }, [startTime, endTime]);
+
+  const handleDateChange = (e) => setCurrentDate(new Date(`${e.target.value}T00:00:00`));
+  const prevDay = () => setCurrentDate((d) => subDays(d, 1));
+  const nextDay = () => setCurrentDate((d) => addDays(d, 1));
+  const onBarClick = (_, idx) => setCurrentDate(monthData[idx].date);
 
   return (
     <div
@@ -289,7 +258,6 @@ export default function Home() {
               value={selectedProjectId || ''}
               onChange={(e) => setSelectedProjectId(e.target.value)}
               className="w-full bg-neutral-900 border border-neutral-800 rounded-lg py-2 pl-3 pr-8 text-white appearance-none focus:outline-none focus:border-purple-500 transition"
-              disabled={projects.length === 0}
             >
               {projects.map((p) => (
                 <option key={p._id} value={p._id}>
@@ -299,20 +267,15 @@ export default function Home() {
             </select>
             <button
               onClick={handleAddProject}
-              className={`absolute right-3 top-1/2 -translate-y-1/2 ${
-                projects.length === 0
-                  ? 'text-red-500 scale-150 animate-pulse'
-                  : 'text-neutral-500 hover:text-white'
-              }`}
+              className="absolute right-3 top-1/2 -translate-y-1/2"
               title="Add project"
             >
-              <FiPlus size={20} />
+              <FiPlus size={20} className="text-neutral-500 hover:text-white" />
             </button>
             <FiChevronDown className="absolute right-8 top-1/2 -translate-y-1/2 text-neutral-500 pointer-events-none" />
           </div>
         </div>
 
-        {/* Time cards */}
         <TimeCard
           label="Start Time"
           time={startTime}
@@ -330,7 +293,6 @@ export default function Home() {
           setIsEditing={setIsEditingEnd}
         />
 
-        {/* Today's total */}
         <div className="bg-neutral-900/50 rounded-2xl p-3 border border-neutral-800 text-center">
           <p className="text-xs text-neutral-400 mb-1">TODAY'S TOTAL</p>
           <p className="text-4xl font-bold text-purple-400">
@@ -340,7 +302,6 @@ export default function Home() {
           </p>
         </div>
 
-        {/* Stats */}
         <div className="flex items-center justify-around bg-neutral-900/50 rounded-2xl p-3 border border-neutral-800">
           <div className="text-center">
             <p className="text-xl font-bold">
@@ -368,7 +329,6 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Monthly bar chart */}
         <div className="bg-neutral-900/50 rounded-2xl p-3 border border-neutral-800 mt-1">
           <AnimatePresence mode="wait">
             <motion.div
@@ -405,9 +365,9 @@ export default function Home() {
             <FiClock size={26} />
           </button>
           <button
-            onClick={() => window.location.href = '/calendar'}
-            className="flex-1 flex justify-center items-center text-neutral-500 hover:text-white transition-colors h-full"
-          >
+          // on click take to calendar page
+          onClick={() => window.location.href = '/calendar'}
+          className="flex-1 flex justify-center items-center text-neutral-500 hover:text-white transition-colors h-full">
             <FiGrid size={24} />
           </button>
           <button className="flex-1 flex justify-center items-center text-neutral-500 hover:text-white transition-colors h-full">
