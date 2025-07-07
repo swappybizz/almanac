@@ -64,7 +64,7 @@ export default function SettingPage() {
                     </p>
                     {/* The Compliant Tip Button */}
                     <a
-                        href="https://coff.ee/aziotopicz" // IMPORTANT: Replace with your actual Ko-fi, Buy Me a Coffee, or Stripe link
+                        href="https://coff.ee/aziotopicz"
                         target="_blank" // CRITICAL: This opens the link in an external browser
                         rel="noopener noreferrer" // Good practice for security
                         className="mt-6 inline-block bg-purple-600 text-white font-bold py-3 px-6 rounded-full hover:bg-purple-700 transition-colors shadow-lg"
