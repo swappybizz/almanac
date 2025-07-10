@@ -423,9 +423,9 @@ export default function Home() {
           </div>
         </div>
       </main>
-      <footer className="flex sticky bottom-12 opacity-70 items-center justify-center mt-auto">
+      <footer className="flex sticky bottom-16 opacity-70 items-center justify-center mt-auto">
 
-        <div className="flex items-center gap-x-6 bg-neutral-900 rounded-full h-16 shadow-lg border border-neutral-800 px-6">
+        <div className="flex items-center gap-x-6 bg-neutral-900 rounded-full h-12 shadow-lg border border-neutral-800 px-6">
           <button className="flex justify-center items-center text-purple-400 h-full">
             <FiClock size={26} />
           </button>
