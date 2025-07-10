@@ -148,7 +148,7 @@ export default function Home() {
             setSelectedProjectId(data[0]._id);
           } else {
             setIsLoading(false);
-            alert("Please Create a project first click on the + next to your name")
+            alert("To add time please create a project. Click on the + next to your name")
           }
         }
       } catch (e) {
