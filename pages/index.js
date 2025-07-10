@@ -148,7 +148,8 @@ export default function Home() {
             setSelectedProjectId(data[0]._id);
           } else {
             setIsLoading(false);
-            alert("To add time please create a project. Click on the + next to your name")
+            alert("To add time please create a project. Without a Project, your logged times would not be saved. Follow the next step or Click on the + next to your name")
+            handleAddProject()
           }
         }
       } catch (e) {
