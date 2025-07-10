@@ -1,32 +1,15 @@
 // pages/calendar.js
-import { useState, useEffect, useRef, useMemo } from 'react';
+
 import { useRouter } from 'next/router';
-import { useUser, UserButton } from '@clerk/nextjs';
-import { motion, AnimatePresence } from 'framer-motion';
-import {
-    format,
-    addMonths,
-    subMonths,
-    addYears,
-    subYears,
-    startOfMonth,
-    getDaysInMonth,
-    formatISO,
-    parseISO,
-    isSameDay
-} from 'date-fns';
+import { UserButton } from '@clerk/nextjs';
+
+
 import {
     FiArrowLeft,
-    FiChevronLeft,
-    FiChevronRight,
-    FiChevronsLeft,
-    FiChevronsRight,
     FiGrid,
     FiClock,
     FiSettings,
-    FiChevronDown,
-    FiPlus,
-    FiBarChart
+
 } from 'react-icons/fi';
 
 
@@ -98,14 +81,14 @@ export default function SettingPage() {
                     {/* Button 2 */}
                     <button
 
-                        className="flex justify-center items-center text-purple-400 h-full"
+                        className="flex justify-center items-center text-neutral-500 h-full"
 
                     >
                         <FiGrid size={24} />
                     </button>
                     <button
                         onClick={() => (window.location.href = '/settings')}
-                        className="flex justify-center items-center text-neutral-500 hover:text-white transition-colors h-full"
+                        className="flex justify-center items-center text-purple-400  hover:text-white transition-colors h-full"
                     >
                         <FiSettings size={24} />
                     </button>

@@ -17,7 +17,7 @@ export default function LoginPage() {
           Time Dalo
           <FiClock className="text-purple-500" size={32} />
         </h1>
-        <p className="mt-4 text-lg text-neutral-300 font-medium animate-fadein-delay">
+        <p className="m-4 text-center text-lg text-neutral-300 font-medium animate-fadein-delay">
           Log your time & make an Excel file, with just one click.
           <FiGrid className="inline ml-2 text-purple-500" size={22} />
         </p>

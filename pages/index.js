@@ -148,6 +148,7 @@ export default function Home() {
             setSelectedProjectId(data[0]._id);
           } else {
             setIsLoading(false);
+            alert("Please Create a project first click on the + next to your name")
           }
         }
       } catch (e) {
@@ -315,10 +316,17 @@ export default function Home() {
             {user?.fullName}
           </p>
           <div className="relative w-48 flex items-center">
+            <button
+              onClick={handleAddProject}
+              className="absolute left-3 top-1/2 -translate-y-1/2"
+              title="Add project"
+            >
+              <FiPlus size={20} className="text-neutral-500 hover:text-white" />
+            </button>
             <select
               value={selectedProjectId || ''}
               onChange={(e) => setSelectedProjectId(e.target.value)}
-              className="w-full bg-neutral-900 border border-neutral-800 rounded-lg py-2 pl-3 pr-8 text-white appearance-none focus:outline-none focus:border-purple-500 transition"
+              className="w-full bg-neutral-900 border border-neutral-800 rounded-lg py-2 pl-3 pr-3 text-white appearance-none focus:outline-none focus:border-purple-500 transition"
             >
               {projects.map((p) => (
                 <option key={p._id} value={p._id}>
@@ -326,14 +334,8 @@ export default function Home() {
                 </option>
               ))}
             </select>
-            <button
-              onClick={handleAddProject}
-              className="absolute right-3 top-1/2 -translate-y-1/2"
-              title="Add project"
-            >
-              <FiPlus size={20} className="text-neutral-500 hover:text-white" />
-            </button>
-            <FiChevronDown className="absolute right-8 top-1/2 -translate-y-1/2 text-neutral-500 pointer-events-none" />
+
+            <FiChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 pointer-events-none" />
           </div>
         </div>
 
@@ -420,7 +422,7 @@ export default function Home() {
           </div>
         </div>
       </main>
-      <footer className="flex items-center justify-center p-4 mt-auto">
+      <footer className="flex sticky bottom-12 opacity-70 items-center justify-center mt-auto">
 
         <div className="flex items-center gap-x-6 bg-neutral-900 rounded-full h-16 shadow-lg border border-neutral-800 px-6">
           <button className="flex justify-center items-center text-purple-400 h-full">
