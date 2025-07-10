@@ -115,7 +115,9 @@ export default function SettingPage({ deferredPrompt, setDeferredPrompt }) {
           >
             <FiClock size={26} />
           </button>
-          <button className="flex justify-center items-center text-neutral-500 h-full">
+          <button
+          onClick={() => (window.location.href ='/calendar')}
+          className="flex justify-center items-center text-neutral-500 h-full">
             <FiGrid size={24} />
           </button>
           <button

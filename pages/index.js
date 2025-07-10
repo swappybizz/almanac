@@ -327,7 +327,7 @@ export default function Home() {
             <select
               value={selectedProjectId || ''}
               onChange={(e) => setSelectedProjectId(e.target.value)}
-              className="w-full bg-neutral-900 border border-neutral-800 rounded-lg py-2 pl-3 pr-3 text-white appearance-none focus:outline-none focus:border-purple-500 transition"
+              className="w-full bg-neutral-900 border border-neutral-800 rounded-lg py-2 pl-8 pr-3 text-white appearance-none focus:outline-none focus:border-purple-500 transition"
             >
               {projects.map((p) => (
                 <option key={p._id} value={p._id}>
