@@ -6,11 +6,10 @@
 [![MongoDB](https://img.shields.io/badge/Database-MongoDB-green?logo=mongodb)](https://www.mongodb.com/)  
 [![Clerk](https://img.shields.io/badge/Auth-Clerk-blue?logo=clerk)](https://clerk.com/)  
 
-A sleek, open‑source time‑tracking and PWA (Progressive Web App) built with Next.js, Clerk for authentication, MongoDB for data storage, and rich visualizations for daily, weekly, and monthly logs. Export your logs as Excel files with a single click, install on mobile devices, and even generate repair estimates via image processing with OpenAI.
+A sleek, open‑source time‑tracking PWA built with Next.js, Clerk for authentication, MongoDB for data storage, and rich visualizations for daily, weekly, and monthly logs. Export your logs as Excel files with a single click, install on mobile devices, and keep track of your time effortlessly.
 
----
 The app is available on the Apple App Store under the name **TimeDalo**.  
-You can also access it directly at [timedalo.store](https://timedalo.store).  
+You can also access it directly at [timedalo.store](https://timedalo.store).
 
 ---
 
@@ -35,21 +34,16 @@ You can also access it directly at [timedalo.store](https://timedalo.store).
 
 - **Authentication & Authorization**  
   - Sign in/out flow powered by [Clerk](https://clerk.com/)  
-  - Protected API routes for time logs, projects, invoices  
+  - Protected API routes for time logs and projects  
 
-- **Projects & Observations**  
+- **Projects Management**  
   - Create, list, and select multiple projects  
-  - Paginated “observations” (invoices) API for future UI  
-
-- **Automated Repair Estimation**  
-  - `POST /api/process`  
-  - Upload an image URL and let OpenAI identify parts & calculate costs  
-  - Stores estimates in MongoDB for invoicing  
+  - Persisted in MongoDB  
 
 - **Modern UI/UX**  
   - Dark‑mode styling with Tailwind CSS  
   - Smooth animations via Framer Motion  
-  - Charts powered by Recharts & custom rounded bars  
+  - Charts powered by Recharts  
 
 ---
 
@@ -63,7 +57,6 @@ You can also access it directly at [timedalo.store](https://timedalo.store).
 - **Charts & Animations**: Recharts, Framer Motion  
 - **Date Utilities**: date‑fns  
 - **Excel Export**: [`xlsx`](https://github.com/SheetJS/sheetjs)  
-- **AI Integration**: OpenAI (GPT‑4.1) for image analysis  
 - **Icons**: React Icons  
 
 ---
@@ -75,7 +68,6 @@ You can also access it directly at [timedalo.store](https://timedalo.store).
 - **Node.js** ≥ 18.x  
 - **MongoDB** instance (local or cloud)  
 - Clerk account & application (API keys)  
-- OpenAI account & API key  
 
 ### Environment Variables
 
@@ -85,7 +77,6 @@ Create a `.env.local` file at your project root:
 MONGODB_URI="your_mongodb_connection_string"
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_test_..."
 CLERK_SECRET_KEY="sk_test_..."
-OPENAI_API_KEY="sk-..."
 ```
 
 ### Installation
@@ -115,7 +106,7 @@ npm start
 
 ## 📂 Project Structure
 
-\`\`\`
+```
 .
 ├── components/         # Reusable React components (e.g., TimeCard, DayModal)
 ├── lib/
@@ -125,8 +116,6 @@ npm start
 │   │   ├── getTimeLog.js
 │   │   ├── saveTimeLog.js
 │   │   ├── projects.js
-│   │   ├── observations.js
-│   │   ├── process.js    # OpenAI image‑based repair estimator
 │   ├── _app.js          # App-level setup: ClerkProvider, PWA hooks
 │   ├── _document.js     # Custom HTML document: manifest, icons
 │   ├── index.js         # Daily log & charts
@@ -140,7 +129,7 @@ npm start
 │   └── globals.css      # Global Tailwind imports
 ├── package.json
 └── README.md            # ← you are here
-\`\`\`
+```
 
 ---
 
