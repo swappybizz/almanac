@@ -9,6 +9,10 @@
 A sleek, open‑source time‑tracking and PWA (Progressive Web App) built with Next.js, Clerk for authentication, MongoDB for data storage, and rich visualizations for daily, weekly, and monthly logs. Export your logs as Excel files with a single click, install on mobile devices, and even generate repair estimates via image processing with OpenAI.
 
 ---
+The app is available on the Apple App Store under the name **TimeDalo**.  
+You can also access it directly at [timedalo.store](https://timedalo.store).  
+
+---
 
 ## 🚀 Features
 
