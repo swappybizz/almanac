@@ -1,0 +1,1788 @@
+
+
+/* ========== pages/_app.js ========== */
+
+import "@/styles/globals.css";
+import {
+  ClerkProvider,
+  SignInButton,
+  SignedIn,
+  SignedOut,
+  UserButton,
+} from "@clerk/nextjs";
+import { useEffect, useState } from "react";
+
+export default function App({ Component, pageProps }) {
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+
+
+  // --> THIS EFFECT NOW HANDLES ALL PWA SETUP <--
+  useEffect(() => {
+    // 1. REGISTER THE SERVICE WORKER
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').then(
+          (registration) => {
+            console.log('Service Worker registration successful:', registration.scope);
+          },
+          (err) => {
+            console.error('Service Worker registration failed:', err);
+          }
+        );
+      });
+    }
+
+    // 2. LISTEN FOR THE INSTALL PROMPT
+    const handler = (e) => {
+      e.preventDefault();
+      console.log("✅ 'beforeinstallprompt' event fired and captured.");
+      setDeferredPrompt(e);
+    };
+
+    window.addEventListener("beforeinstallprompt", handler);
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handler);
+    };
+  }, []);
+
+  // Pass the state and setter down to all pages
+  pageProps.deferredPrompt = deferredPrompt;
+  pageProps.setDeferredPrompt = setDeferredPrompt;
+
+  return (
+    <ClerkProvider  {...pageProps}>
+      <SignedOut>
+        <SignInButton />
+      </SignedOut>
+      <SignedIn>
+
+      </SignedIn>
+
+      <Component {...pageProps} />
+    </ClerkProvider>
+  );
+}
+
+/* ========== pages/_document.js ========== */
+
+// file templedtr/pages/_document.js:
+import { Html, Head, Main, NextScript } from "next/document";
+
+export default function Document() {
+  return (
+    <Html lang="en">
+      <Head>
+        {/* Link to the manifest file */}
+        <link rel="manifest" href="/manifest.json" />
+        {/* Meta tags for theme color and mobile support */}
+        <meta name="theme-color" content="#000000" />
+        {/* <meta name="viewport" content="width=device-width, initial-scale=1" /> */}
+        <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
+      </Head>
+      <body>
+        <Main />
+        <NextScript />
+      </body>
+    </Html>
+  );
+}
+
+/* ========== pages/api/getTimeLog.js ========== */
+
+// pages/api/getTimeLog.js
+import { getAuth } from '@clerk/nextjs/server';
+import { connectToDatabase } from '@/lib/mongodb';
+import {
+  startOfWeek,
+  endOfWeek,
+  startOfMonth,
+  endOfMonth,
+  formatISO,
+  parseISO,
+  getDaysInMonth,
+  addDays
+} from 'date-fns';
+
+// Returns minutes between two "HH:mm" times, handling overnight spans
+const calculateDuration = (start, end) => {
+  const s = new Date(`1970-01-01T${start}:00`);
+  let e = new Date(`1970-01-01T${end}:00`);
+  if (e < s) e.setDate(e.getDate() + 1);
+  return (e - s) / (1000 * 60);
+};
+
+export default async function handler(req, res) {
+  if (req.method !== 'GET') {
+    return res.status(405).json({ error: 'Method Not Allowed' });
+  }
+
+  const { userId } = getAuth(req);
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { date, projectId } = req.query;
+  if (!date || !projectId) {
+    return res.status(400).json({ error: 'Missing date or projectId' });
+  }
+
+  try {
+    const { db } = await connectToDatabase();
+    const timeLogs = db.collection('timeLogs');
+    const target = parseISO(date);
+
+    // Today's log
+    const todayLog = await timeLogs.findOne({
+      userId,
+      projectId,
+      date: formatISO(target, { representation: 'date' }),
+    });
+
+    // All logs for project
+    const allLogs = await timeLogs.find({ userId, projectId }).toArray();
+
+    // Stats calculations
+    let weeklyMin = 0, monthlyMin = 0, allTimeMin = 0;
+    const wkStart = startOfWeek(target, { weekStartsOn: 1 });
+    const wkEnd = endOfWeek(target, { weekStartsOn: 1 });
+    const moStart = startOfMonth(target);
+    const moEnd = endOfMonth(target);
+
+    allLogs.forEach(log => {
+      const logDate = parseISO(log.date);
+      const mins = calculateDuration(log.startTime, log.endTime);
+      allTimeMin += mins;
+      if (logDate >= wkStart && logDate <= wkEnd) weeklyMin += mins;
+      if (logDate >= moStart && logDate <= moEnd) monthlyMin += mins;
+    });
+
+    const avgMin = allLogs.length ? allTimeMin / allLogs.length : 0;
+
+    // Daily logs for current month
+    const dim = getDaysInMonth(target);
+    const dailyLogs = Array.from({ length: dim }, (_, i) => {
+      const d = addDays(moStart, i);
+      const iso = formatISO(d, { representation: 'date' });
+      const log = allLogs.find(l => l.date === iso);
+      const hrs = log ? calculateDuration(log.startTime, log.endTime) / 60 : 0;
+      return { date: iso, hours: hrs };
+    });
+
+    res.status(200).json({
+      log: todayLog || null,
+      stats: {
+        weekly: { hours: Math.floor(weeklyMin / 60), minutes: weeklyMin % 60 },
+        monthly: { hours: Math.floor(monthlyMin / 60), minutes: monthlyMin % 60 },
+        average: { hours: Math.floor(avgMin / 60), minutes: Math.round(avgMin % 60) },
+      },
+      dailyLogs,
+    });
+  } catch (err) {
+    console.error('getTimeLog error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+
+/* ========== pages/api/observations.js ========== */
+
+// pages/api/observations.js
+import { getAuth } from "@clerk/nextjs/server";
+import { connectToDatabase } from "@/lib/mongodb";
+
+export default async function handler(req, res) {
+  if (req.method !== "GET") {
+    res.setHeader("Allow", ["GET"]);
+    return res.status(405).end(`Method ${req.method} Not Allowed`);
+  }
+  const { userId } = getAuth(req);
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+  const page = parseInt(req.query.page || "1", 10);
+  const limit = parseInt(req.query.limit || "30", 10);
+  const skip = (page - 1) * limit;
+
+  const { db } = await connectToDatabase();
+  const col = db.collection("invoices");
+
+  const [total, items] = await Promise.all([
+    col.countDocuments({ userId }),
+    col
+      .find({ userId })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .toArray(),
+  ]);
+  console.log("items", items)
+  res.status(200).json({ total, items });
+}
+
+/* ========== pages/api/process.js ========== */
+
+// pages/api/process.js
+import OpenAI from "openai";
+import { connectToDatabase } from "@/lib/mongodb";
+import { getAuth } from "@clerk/nextjs/server";
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+// Standardized price list
+const priceList = [
+  {
+    id: "kobberkabel_per_m",
+    name: "kobberkabel",
+    description: "Kobberkabel for ringjord og jording",
+    unit: "m",
+    unitCost: 20
+  },
+  {
+    id: "jordpresseklemme_stk",
+    name: "jordpresseklemme",
+    description: "Jordpresseklemme",
+    unit: "stk",
+    unitCost: 50
+  },
+  {
+    id: "stikkontakt_32a_3fas_stk",
+    name: "32A 3-fas stikkontakt",
+    description: "Stikkontakt 32A, 3-fase",
+    unit: "stk",
+    unitCost: 200
+  },
+  {
+    id: "stikkontakt_16a_3fas_stk",
+    name: "16A 3-fas stikkontakt",
+    description: "Stikkontakt 16A, 3-fase",
+    unit: "stk",
+    unitCost: 150
+  },
+  {
+    id: "sg_artes_utelys_stk",
+    name: "SG Artes utelys",
+    description: "Utelys SG Artes",
+    unit: "stk",
+    unitCost: 600
+  },
+  {
+    id: "ip44_stikkontakt_stk",
+    name: "IP44 stikkontakt",
+    description: "Stikkontakt IP44",
+    unit: "stk",
+    unitCost: 100
+  },
+  {
+    id: "ip55_bryter_stk",
+    name: "IP55 bryter",
+    description: "Bryter IP55",
+    unit: "stk",
+    unitCost: 120
+  },
+  {
+    id: "bryter_stk",
+    name: "bryter",
+    description: "Standard bryter",
+    unit: "stk",
+    unitCost: 80
+  },
+  {
+    id: "sikringsskap_stk",
+    name: "sikringsskap",
+    description: "Sikringsskap for montering på gulv",
+    unit: "stk",
+    unitCost: 2500
+  },
+  {
+    id: "jfa_3fas_16a_stk",
+    name: "JFA 3-fas 16A",
+    description: "JFA 3-fase 16A",
+    unit: "stk",
+    unitCost: 150
+  },
+  {
+    id: "jfa_3fas_32a_stk",
+    name: "JFA 3-fas 32A",
+    description: "JFA 3-fase 32A",
+    unit: "stk",
+    unitCost: 250
+  },
+  {
+    id: "jfa_2fas_16a_stk",
+    name: "JFA 2-fas 16A",
+    description: "JFA 2-fase 16A",
+    unit: "stk",
+    unitCost: 100
+  },
+  {
+    id: "overspenningsvern_stk",
+    name: "overspenningsvern",
+    description: "Overspenningsvern",
+    unit: "stk",
+    unitCost: 800
+  },
+  {
+    id: "hovedsikring_80a_stk",
+    name: "80A hovedsikring",
+    description: "Hovedsikring 80A",
+    unit: "stk",
+    unitCost: 300
+  },
+  {
+    id: "astrour_timer_stk",
+    name: "astrour",
+    description: "Astrour styrer utelys",
+    unit: "stk",
+    unitCost: 400
+  },
+  {
+    id: "lyskaster_stk",
+    name: "lyskaster",
+    description: "Lyskaster for utendørs montering",
+    unit: "stk",
+    unitCost: 1000
+  },
+  {
+    id: "glmaox_i60_armatur_stk",
+    name: "Glmaox i60 armatur",
+    description: "Glmaox i60 lysarmatur for innvendig montering",
+    unit: "stk",
+    unitCost: 600
+  },
+  {
+    id: "kabelror_110mm_per_m",
+    name: "kabelrør 110 mm",
+    description: "Kabelrør 110 mm per meter",
+    unit: "m",
+    unitCost: 30
+  },
+  {
+    id: "kabelror_50mm_per_m",
+    name: "kabelrør 50 mm",
+    description: "Kabelrør 50 mm per meter",
+    unit: "m",
+    unitCost: 20
+  },
+  {
+    id: "trekkeror_25mm_per_m",
+    name: "trekkerør 25 mm",
+    description: "Trekkerør 25 mm per meter",
+    unit: "m",
+    unitCost: 15
+  },
+  {
+    id: "landbruksarmatur_stk",
+    name: "landbruksarmatur",
+    description: "Landbruksarmatur 1500 mm, 7500 lumen, 4000 K",
+    unit: "stk",
+    unitCost: 1200
+  },
+  {
+    id: "arbeid_per_time",
+    name: "arbeid",
+    description: "Arbeid per time",
+    unit: "time",
+    unitCost: 700
+  }
+];
+
+export default async function handler(req, res) {
+  const { userId } = getAuth(req);
+  if (!userId) {
+    console.log("Unauthorized attempt to call /api/process");
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  if (req.method !== "POST") {
+    res.setHeader("Allow", ["POST"]);
+    console.log(`Method ${req.method} not allowed on /api/process`);
+    return res.status(405).end(`Method ${req.method} Not Allowed`);
+  }
+
+  const { name, url, batchCode } = req.body;
+  if (!name || !url || !batchCode) {
+    console.log("Bad request to /api/process, missing fields:", req.body);
+    return res.status(400).json({ error: "Missing name, url or batchCode" });
+  }
+
+  // Build detailed system prompt
+  const itemLines = priceList
+    .map(
+      (i) =>
+        `• id: "${i.id}", name: "${i.name}", description: "${i.description}", unit: "${i.unit}", unitCost: ${i.unitCost}`
+    )
+    .join("\n");
+
+  const systemPrompt = `
+You are an expert electrician with 15+ years of experience.
+Inputs provided to you:
+- name: filename of the image.
+- url: publicly accessible URL of the image showing an electrical component or installation needing repair.
+- batchCode: unique identifier for this repair session.
+
+You have this standardized price list (unitCost in NOK):
+${itemLines}
+
+When given the image URL, you must:
+1. Analyze the image to identify repair or replacement needs.
+2. For each need, choose one item from the price list by its "id" and determine an integer quantity.
+3. Compute totalCost = quantity × unitCost.
+4. Sum all totalCost values as totalEstimate.
+
+Output ONLY valid JSON matching this schema exactly:
+\`\`\`json
+{
+  "schemaVersion": "1.0",
+  "batchCode": "<same as input>",
+  "items": [
+    {
+      "itemId": "<id from priceList>",
+      "name": "<name from priceList>",
+      "description": "<description from priceList>",
+      "unit": "<unit from priceList>",
+      "quantity": <integer>,
+      "unitCost": <number>,
+      "totalCost": <number>
+    },
+    ...
+  ],
+  "totalEstimate": <claculate, number>
+}
+\`\`\`
+
+Do NOT include any extra keys, commentary, or markdown.
+Example:
+\`\`\`json
+{
+  "schemaVersion": "1.0",
+  "batchCode": "ABC123",
+  "items": [
+    {
+      "itemId": "kobberkabel_per_m",
+      "name": "kobberkabel",
+      "description": "Kobberkabel for ringjord og jording",
+      "unit": "m",
+      "quantity": 10,
+      "unitCost": 20,
+      "totalCost": 200
+    },
+    {
+      "itemId": "arbeid_per_time",
+      "name": "arbeid",
+      "description": "Arbeid per time",
+      "unit": "time",
+      "quantity": 2,
+      "unitCost": 700,
+      "totalCost": 1400
+    }
+  ],
+  "totalEstimate": 1600
+}
+\`\`\`
+`.trim();
+
+  const messages = [
+    { role: "system", content: systemPrompt },
+    {
+      role: "user",
+      content: [
+        { type: "text", text: `name: ${name}` },
+        { type: "text", text: `batchCode: ${batchCode}` },
+        { type: "image_url", image_url: { url } }
+      ]
+    }
+  ];
+
+  let bill;
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-4.1",
+      messages,
+      response_format: { type: "json_object" }
+    });
+    bill = JSON.parse(response.choices[0].message.content);
+    console.log("OpenAI returned bill:", bill);
+  } catch (err) {
+    console.error("OpenAI request failed:", err);
+    return res.status(500).json({ error: "OpenAI request failed" });
+  }
+
+  // Save to MongoDB
+  const record = {
+    userId,
+    batchCode,
+    name,
+    url,
+    items: bill.items,
+    totalEstimate: bill.totalEstimate,
+    createdAt: new Date()
+  };
+  try {
+    const { db } = await connectToDatabase();
+    const invoices = db.collection("invoices");
+    await invoices.insertOne(record);
+    console.log("Saved invoice record:", record);
+  } catch (err) {
+    console.error("Database insert failed:", err);
+    return res.status(500).json({ error: "Database insert failed" });
+  }
+
+  console.log("Sending response to frontend:", {
+    items: bill.items,
+    totalEstimate: bill.totalEstimate
+  });
+  return res.status(200).json({
+    items: bill.items,
+    totalEstimate: bill.totalEstimate
+  });
+}
+
+
+/* ========== pages/api/projects.js ========== */
+
+// pages/api/projects.js
+import { getAuth } from '@clerk/nextjs/server';
+import { connectToDatabase } from '@/lib/mongodb';
+
+export default async function handler(req, res) {
+  const { userId } = getAuth(req);
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { db } = await connectToDatabase();
+  const projectsCol = db.collection('projects');
+
+  if (req.method === 'GET') {
+    // List all projects for this user
+    const projects = await projectsCol.find({ userId }).toArray();
+    return res.status(200).json(projects);
+  }
+
+  if (req.method === 'POST') {
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ error: 'Project name is required' });
+
+    // Insert if not exists
+    let project = await projectsCol.findOne({ userId, name });
+    if (!project) {
+      const result = await projectsCol.insertOne({ userId, name });
+      project = { _id: result.insertedId, userId, name };
+    }
+    return res.status(200).json(project);
+  }
+
+  res.setHeader('Allow', ['GET', 'POST']);
+  res.status(405).end(`Method ${req.method} Not Allowed`);
+}
+
+
+/* ========== pages/api/saveTimeLog.js ========== */
+
+// pages/api/saveTimeLog.js
+import { getAuth } from '@clerk/nextjs/server';
+import { connectToDatabase } from '@/lib/mongodb';
+import { formatISO, parseISO } from 'date-fns';
+
+export default async function handler(req, res) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method Not Allowed' });
+  }
+
+  const { userId } = getAuth(req);
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { date, projectId, startTime, endTime } = req.body;
+  if (!date || !projectId || !startTime || !endTime) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+
+  try {
+    const { db } = await connectToDatabase();
+    const timeLogs = db.collection('timeLogs');
+
+    const filter = {
+      userId,
+      projectId,
+      date: formatISO(parseISO(date), { representation: 'date' }),
+    };
+
+    const update = {
+      $set: { startTime, endTime },
+    };
+
+    await timeLogs.updateOne(filter, update, { upsert: true });
+    res.status(200).json({ success: true });
+  } catch (err) {
+    console.error('saveTimeLog error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+
+/* ========== pages/calendar.js ========== */
+
+// pages/calendar.js
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { useRouter } from 'next/router';
+import { useUser, UserButton } from '@clerk/nextjs';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  format,
+  addMonths,
+  subMonths,
+  addYears,
+  subYears,
+  startOfMonth,
+  getDaysInMonth,
+  formatISO,
+  parseISO,
+  isSameDay
+} from 'date-fns';
+import {
+  FiArrowLeft,
+  FiChevronLeft,
+  FiChevronRight,
+  FiChevronsLeft,
+  FiChevronsRight,
+  FiGrid,
+  FiClock,
+  FiSettings,
+  FiChevronDown,
+  FiPlus,
+  FiBarChart
+} from 'react-icons/fi';
+
+// ---- Day‐click Modal for editing a single day ----
+function DayModal({ date, projectId, close, refresh }) {
+  const [start, setStart] = useState('08:00');
+  const [end, setEnd] = useState('16:30');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      const iso = formatISO(date, { representation: 'date' });
+      const res = await fetch(`/api/getTimeLog?date=${iso}&projectId=${projectId}`);
+      const json = await res.json();
+      if (res.ok && json.log) {
+        setStart(json.log.startTime);
+        setEnd(json.log.endTime);
+      }
+      setLoading(false);
+    })();
+  }, [date, projectId]);
+
+  const save = async () => {
+    const iso = formatISO(date, { representation: 'date' });
+    await fetch('/api/saveTimeLog', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ date: iso, projectId, startTime: start, endTime: end })
+    });
+    refresh();
+    close();
+  };
+
+  return (
+    <motion.div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+    >
+      <motion.div
+        className="bg-neutral-900 rounded-2xl p-6 w-80"
+        initial={{ scale: 0.8 }}
+        animate={{ scale: 1 }}
+        exit={{ scale: 0.8 }}
+      >
+        <h2 className="text-lg mb-4 text-center">{format(date, 'do MMM yyyy')}</h2>
+        {loading ? (
+          <p className="text-center">Loading…</p>
+        ) : (
+          <>
+            <label className="block mb-2">
+              <span className="text-sm text-neutral-400">Start Time</span>
+              <input
+                type="time"
+                value={start}
+                onChange={e => setStart(e.target.value)}
+                className="w-full bg-neutral-800 rounded p-2 mt-1 text-white"
+              />
+            </label>
+            <label className="block mb-4">
+              <span className="text-sm text-neutral-400">End Time</span>
+              <input
+                type="time"
+                value={end}
+                onChange={e => setEnd(e.target.value)}
+                className="w-full bg-neutral-800 rounded p-2 mt-1 text-white"
+              />
+            </label>
+            <div className="flex justify-end space-x-2">
+              <button
+                onClick={close}
+                className="px-4 py-2 bg-neutral-800 rounded hover:bg-neutral-700"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={save}
+                className="px-4 py-2 bg-purple-600 rounded hover:bg-purple-500"
+              >
+                Save
+              </button>
+            </div>
+          </>
+        )}
+      </motion.div>
+    </motion.div>
+  );
+}
+
+// ---- Stats Modal for the month ----
+function StatsModal({ stats, close }) {
+  return (
+    <motion.div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+    >
+      <motion.div
+        className="bg-neutral-900 rounded-2xl p-6 w-80"
+        initial={{ scale: 0.8 }}
+        animate={{ scale: 1 }}
+        exit={{ scale: 0.8 }}
+      >
+        <h2 className="text-lg mb-4 text-center">Month Stats</h2>
+        <div className="space-y-2">
+          <p>
+            <span className="font-semibold">Total Hours:</span>{' '}
+            {stats.monthly.hours}h {stats.monthly.minutes}m
+          </p>
+          <p>
+            <span className="font-semibold">Weekly Hours:</span>{' '}
+            {stats.weekly.hours}h {stats.weekly.minutes}m
+          </p>
+          <p>
+            <span className="font-semibold">All-time Avg:</span>{' '}
+            {stats.average.hours}h {stats.average.minutes}m
+          </p>
+        </div>
+        <div className="flex justify-end mt-6">
+          <button
+            onClick={close}
+            className="px-4 py-2 bg-neutral-800 rounded hover:bg-neutral-700"
+          >
+            Close
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+export default function CalendarPage() {
+  const router = useRouter();
+  const { query } = useRouter();
+  const selectedProjectName = query.name;
+  const { user } = useUser();
+  const [projects, setProjects] = useState([]);
+  const [projectId, setProjectId] = useState(null);
+
+  const [viewDate, setViewDate] = useState(new Date());
+  const [monthData, setMonthData] = useState([]); // { date: Date, hours }
+  const [stats, setStats] = useState({ weekly: {}, monthly: {}, average: {} });
+  const [loading, setLoading] = useState(true);
+
+  const [dayModalDate, setDayModalDate] = useState(null);
+  const [showStats, setShowStats] = useState(false);
+  const today= new Date();
+useEffect(() => {
+  (async () => {
+    const res = await fetch('/api/projects');
+    const data = await res.json();
+    if (res.ok) {
+      setProjects(data);
+
+      // Get project name from URL
+      const { name } = router.query;
+      if (name) {
+        const matched = data.find(p => p.name.toLowerCase() === name.toLowerCase());
+        if (matched) {
+          setProjectId(matched._id);
+        } else {
+          setProjectId(data[0]?._id);
+        }
+      } else {
+        setProjectId(data[0]?._id);
+      }
+
+      if (data.length === 0) setLoading(false);
+    }
+  })();
+}, [router.query.name]); // <-- listen for changes
+
+
+  // whenever viewDate or projectId changes, fetch month data + stats
+  useEffect(() => {
+    if (!projectId) return;
+    setLoading(true);
+    (async () => {
+      const iso = formatISO(viewDate, { representation: 'date' });
+      const res = await fetch(`/api/getTimeLog?date=${iso}&projectId=${projectId}`);
+      const json = await res.json();
+      if (res.ok) {
+        setMonthData(
+          json.dailyLogs.map(d => ({
+            date: parseISO(d.date),
+            hours: d.hours
+          }))
+        );
+        setStats(json.stats);
+      }
+      setLoading(false);
+    })();
+  }, [viewDate, projectId]);
+
+  // build calendar grid
+  const daysInMonth  = getDaysInMonth(viewDate);
+  const firstOfMonth = startOfMonth(viewDate);
+  const dayOffset    = (firstOfMonth.getDay() + 6) % 7; // Monday=0 … Sunday=6
+  const cells        = [
+    ...Array(dayOffset).fill(null),
+    ...Array.from({ length: daysInMonth }, (_, i) =>
+      new Date(firstOfMonth.getFullYear(), firstOfMonth.getMonth(), i + 1)
+    )
+  ];
+  const weeks = [];
+  for (let i = 0; i < cells.length; i += 7) {
+    weeks.push(cells.slice(i, i + 7));
+  }
+  const prevMonth = () => setViewDate(d => subMonths(d, 1));
+  const nextMonth = () => setViewDate(d => addMonths(d, 1));
+  const prevYear  = () => setViewDate(d => subYears(d, 1));
+  const nextYear  = () => setViewDate(d => addYears(d, 1));
+  const exportToExcel = async () => {
+    if (!projectId) return;
+    // import the module (no .default)
+    const XLSX = await import('xlsx');
+    const proj = projects.find(p => p._id === projectId);
+    const projectName = proj?.name || 'Project';
+    const monthLabel = format(viewDate, 'MMMM yyyy');
+    const totalH = stats.monthly.hours + stats.monthly.minutes / 60;
+    const rows = [];
+    rows.push(['Project', projectName]);
+    rows.push(['Month', monthLabel]);
+    rows.push(['Total Hours', totalH.toFixed(2)]);
+    rows.push([]);
+    rows.push(['Date', 'Hours']);
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      const date = new Date(viewDate.getFullYear(), viewDate.getMonth(), d);
+      const entry = monthData.find(e => isSameDay(e.date, date));
+      rows.push([
+        format(date, 'yyyy-MM-dd'),
+        entry ? entry.hours : 0
+      ]);
+    }
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Log');
+    XLSX.writeFile(wb, `${projectName}_${monthLabel}_Log.xlsx`);
+  };
+
+  return (
+    <div className="bg-neutral-950 text-white w-full min-h-screen flex flex-col">
+      <header className="flex items-center justify-between px-4 pt-6">
+        <button
+          onClick={() => router.back()}
+          className="p-2 rounded-full hover:bg-neutral-800 transition">
+          <FiArrowLeft size={24} />
+        </button>
+        <div className="flex items-center space-x-2 text-neutral-300">
+          <button onClick={prevYear} className="p-2 hover:bg-neutral-800 rounded-full">
+            <FiChevronsLeft size={20} />
+          </button>
+          <button onClick={prevMonth} className="p-2 hover:bg-neutral-800 rounded-full">
+            <FiChevronLeft size={20} />
+          </button>
+          <h1 className="text-lg font-medium">{format(viewDate, 'MMMM yyyy')}</h1>
+          <button onClick={nextMonth} className="p-2 hover:bg-neutral-800 rounded-full">
+            <FiChevronRight size={20} />
+          </button>
+          <button onClick={nextYear} className="p-2 hover:bg-neutral-800 rounded-full">
+            <FiChevronsRight size={20} />
+          </button>
+        </div>
+        <button
+          onClick={() => setShowStats(true)}
+          className="p-2 rounded-full hover:bg-neutral-800 transition"
+        >
+          <FiBarChart size={24} />
+        </button>
+      </header>
+      <div className="px-4 mt-4">
+        <div className="relative w-full">
+          <select
+            value={projectId || ''}
+            onChange={e => setProjectId(e.target.value)}
+            className="w-full bg-neutral-900 border border-neutral-800 rounded-lg py-2 pl-3 pr-8 text-white appearance-none focus:outline-none"
+          >
+            {projects.map(p => (
+              <option key={p._id} value={p._id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          <FiChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500" />
+        </div>
+      </div>
+      <main className="flex-1 px-4 py-6 overflow-y-auto">
+        {loading ? (
+          <p className="text-center">Loading…</p>
+        ) : (
+          <div className="grid grid-cols-7 gap-1 text-center">
+            {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d => (
+              <div key={d} className="font-medium text-neutral-500">{d}</div>
+            ))}
+            {weeks.map((week, wi) =>
+              week.map((day, di) => {
+                if (!day) return <div key={`e${wi}-${di}`} />;
+                const entry = monthData.find(d => isSameDay(d.date, day));
+                return (
+                  <button
+                    key={day.toISOString()}
+                    onClick={() => setDayModalDate(day)}
+                    className={`p-2 rounded flex flex-col items-center transition 
+  ${isSameDay(day, today)
+    ? 'bg-neutral-900 border-2 animate-pulse border-purple-500 hover:bg-neutral-800'
+    : 'bg-neutral-900 hover:bg-neutral-800'}
+`}
+                  >
+                    <span>{day.getDate()}</span>
+<span className={`text-xs ${entry && entry.hours > 0 ? 'text-yellow-400 font-black' : 'text-neutral-400'}`}>
+  {entry ? entry.hours.toFixed(1) + 'h' : '-'}
+</span>
+
+                  </button>
+                );
+              })
+            )}
+          </div>
+        )}
+      </main>
+      <button
+        onClick={exportToExcel}
+        className="fixed bottom-24 right-6 bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-full shadow-lg"
+      >
+        Export Excel
+      </button>
+<footer className="flex items-center justify-center p-4 mt-auto">
+  <div className="flex items-center gap-x-6 bg-neutral-900 rounded-full h-16 shadow-lg border border-neutral-800 px-6">
+    {/* Button 1 */}
+    <button
+    onClick={() => (window.location.href = '/')}
+    className="flex justify-center items-center text-neutral-500 hover:text-white transition-colors h-full">
+      <FiClock size={26} />
+    </button>
+
+    {/* Button 2 */}
+    <button
+      
+      className="flex justify-center items-center text-purple-400 h-full"
+      
+    >
+      <FiGrid size={24} />
+    </button>
+    <button
+            onClick={() => (window.location.href = '/settings')}
+            className="flex justify-center items-center text-neutral-500 hover:text-white transition-colors h-full"
+          >
+            <FiSettings size={24} />
+          </button>
+
+    {/* Divider */}
+    <div className="h-8 border-l border-neutral-700" />
+
+    {/* User Button */}
+    <div>
+      <UserButton afterSignOutUrl="/" />
+    </div>
+  </div>
+</footer>
+      <AnimatePresence>
+        {dayModalDate && (
+          <DayModal
+            date={dayModalDate}
+            projectId={projectId}
+            close={() => setDayModalDate(null)}
+            refresh={() => {
+              const iso = formatISO(viewDate, { representation: 'date' });
+              fetch(`/api/getTimeLog?date=${iso}&projectId=${projectId}`)
+                .then(r => r.json())
+                .then(json => {
+                  setMonthData(json.dailyLogs.map(d => ({
+                    date: parseISO(d.date),
+                    hours: d.hours
+                  })));
+                  setStats(json.stats);
+                });
+            }}
+          />
+        )}
+        {showStats && <StatsModal stats={stats} close={() => setShowStats(false)} />}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+
+/* ========== pages/index.js ========== */
+
+// pages/index.js
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { useUser, UserButton } from '@clerk/nextjs';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useRouter } from 'next/router';
+import {
+  format,
+  addDays,
+  subDays,
+  formatISO,
+  isSameDay,
+  parseISO
+} from 'date-fns';
+import {
+  FiClock,
+  FiGrid,
+  FiSettings,
+  FiChevronLeft,
+  FiChevronRight,
+  FiChevronDown,
+  FiPlus,
+} from 'react-icons/fi';
+import { BarChart, Bar, Cell, ResponsiveContainer } from 'recharts';
+
+// Rounded bar shape (unchanged)
+const RoundedBar = ({ fill, x, y, width, height }) => {
+  if (height <= 0) return null;
+  const r = 6;
+  return (
+    <g>
+      <path
+        d={`
+          M${x},${y + r}
+          A${r},${r} 0 0 1 ${x + r},${y}
+          L${x + width - r},${y}
+          A${r},${r} 0 0 1 ${x + width},${y + r}
+          L${x + width},${y + height}
+          L${x},${y + height}
+          Z
+        `}
+        fill={fill}
+      />
+    </g>
+  );
+};
+
+// Time card with immediate focus on edit
+const TimeCard = ({
+  label,
+  time,
+  setTime,
+  accentColor,
+  isEditing,
+  setIsEditing
+}) => {
+  // Use a callback ref to focus the input as soon as it's mounted.
+  // We cannot call .showPicker() here due to browser security restrictions,
+  // as it's not triggered directly by a user gesture. However, .focus() is
+  // allowed and provides a good UX.
+  const inputCallbackRef = (inputElement) => {
+    if (inputElement) {
+      inputElement.focus();
+    }
+  };
+
+  const handleBlur = (e) => {
+    setTime(e.target.value);
+    setIsEditing(false);
+  };
+
+  const isValid = /^\d{2}:\d{2}$/.test(time);
+
+  return (
+    <motion.div
+      layout
+      className={`relative bg-neutral-900 border border-neutral-800 rounded-3xl p-6 cursor-pointer transition-all duration-300 hover:border-${accentColor}-500/50`}
+      onClick={() => !isEditing && setIsEditing(true)}
+    >
+      <div className="flex justify-between items-start">
+        <p className={`text-lg font-semibold text-${accentColor}-400`}>{label}</p>
+        <FiClock className="text-neutral-600" size={24} />
+      </div>
+      <div className="mt-2 h-20 flex items-center">
+        <AnimatePresence mode="wait">
+          {isEditing ? (
+            <motion.div
+              key="input"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="w-full h-full"
+            >
+              <input
+                ref={inputCallbackRef}
+                type="time"
+                defaultValue={isValid ? time : ''}
+                placeholder="set time"
+                onBlur={handleBlur}
+                onKeyDown={(e) => e.key === 'Enter' && handleBlur(e)}
+                className="w-full h-full bg-transparent text-white text-6xl font-mono text-center outline-none"
+                style={{ colorScheme: 'dark' }}
+              />
+            </motion.div>
+          ) : (
+            <motion.p
+              key="text"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="w-full text-6xl font-mono font-bold text-center text-stone-200"
+            >
+              {time}
+            </motion.p>
+          )}
+        </AnimatePresence>
+      </div>
+    </motion.div>
+  );
+};
+
+export default function Home() {
+  const { user } = useUser();
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [projects, setProjects] = useState([]);
+  const [selectedProjectId, setSelectedProjectId] = useState(null);
+
+  // default "empty" times
+  const [startTime, setStartTime] = useState('set time');
+  const [endTime, setEndTime] = useState('set time');
+
+  const [stats, setStats] = useState({ weekly: {}, monthly: {}, average: {} });
+  const [monthData, setMonthData] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isEditingStart, setIsEditingStart] = useState(false);
+  const [isEditingEnd, setIsEditingEnd] = useState(false);
+
+  const isInitialLoad = useRef(false);
+  const dateInputRef = useRef(null);
+  const router = useRouter();
+
+  // load projects
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/projects');
+        const data = await res.json();
+        if (res.ok) {
+          setProjects(data);
+          if (data.length > 0) {
+            setSelectedProjectId(data[0]._id);
+          } else {
+            setIsLoading(false);
+            alert("To add time please create a project. Without a Project, your logged times would not be saved. Follow the next step or Click on the + next to your name")
+            handleAddProject()
+          }
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    })();
+  }, []);
+
+  // fetch daily log + stats + month
+  const fetchLogData = async (date, projectId) => {
+    setIsLoading(true);
+    isInitialLoad.current = false;
+    try {
+      const iso = formatISO(date, { representation: 'date' });
+      const res = await fetch(`/api/getTimeLog?date=${iso}&projectId=${projectId}`);
+      const data = await res.json();
+      if (res.ok) {
+        if (data.log) {
+          setStartTime(data.log.startTime);
+          setEndTime(data.log.endTime);
+        } else {
+          setStartTime('set time');
+          setEndTime('set time');
+        }
+        setStats(data.stats);
+        setMonthData(
+          data.dailyLogs.map((d) => ({
+            date: parseISO(d.date),
+            hours: d.hours,
+          }))
+        );
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsLoading(false);
+      isInitialLoad.current = true;
+    }
+  };
+
+  // when date or project changes
+  useEffect(() => {
+    if (selectedProjectId) {
+      fetchLogData(currentDate, selectedProjectId);
+    }
+  }, [currentDate, selectedProjectId]);
+
+  // save on valid time edits only if we have a project
+  useEffect(() => {
+    if (
+      !isInitialLoad.current ||
+      !selectedProjectId ||
+      projects.length === 0
+    ) {
+      return;
+    }
+    const timePattern = /^\d{2}:\d{2}$/;
+    if (!timePattern.test(startTime) || !timePattern.test(endTime)) {
+      return;
+    }
+
+    (async () => {
+      try {
+        await fetch('/api/saveTimeLog', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            date: formatISO(currentDate, { representation: 'date' }),
+            projectId: selectedProjectId,
+            startTime,
+            endTime,
+          }),
+        });
+        fetchLogData(currentDate, selectedProjectId);
+      } catch (e) {
+        console.error(e);
+      }
+    })();
+  }, [startTime, endTime, selectedProjectId, projects.length]);
+
+  // compute today's duration
+  const [hours, minutes] = useMemo(() => {
+    const timePattern = /^\d{2}:\d{2}$/;
+    if (!timePattern.test(startTime) || !timePattern.test(endTime)) {
+      return [0, 0];
+    }
+    const s = new Date(`1970-01-01T${startTime}:00`);
+    let e = new Date(`1970-01-01T${endTime}:00`);
+    if (e < s) e.setDate(e.getDate() + 1);
+    const diff = e - s;
+    return [Math.floor(diff / 3600000), Math.floor((diff % 3600000) / 60000)];
+  }, [startTime, endTime]);
+
+  // navigation
+  const handleDateChange = (e) =>
+    setCurrentDate(new Date(`${e.target.value}T00:00:00`));
+  const prevDay = () => setCurrentDate((d) => subDays(d, 1));
+  const nextDay = () => setCurrentDate((d) => addDays(d, 1));
+
+  // SAFETY‐CHECKED click handler
+  const onBarClick = (data, idx) => {
+    if (typeof idx !== 'number' || !monthData[idx]) return;
+    setCurrentDate(monthData[idx].date);
+  };
+
+  // add a project
+  const handleAddProject = async () => {
+    const name = window.prompt('Enter a new project name');
+    if (!name) return;
+    try {
+      const res = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      const project = await res.json();
+      if (res.ok) {
+        setProjects((p) => [...p, project]);
+        setSelectedProjectId(project._id);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+  const selectedProject = projects.find((p) => p._id === selectedProjectId);
+
+  return (
+    <div
+      className={`bg-neutral-950 text-white font-sans w-full h-screen max-w-md mx-auto flex flex-col overflow-hidden transition-opacity duration-300 ${isLoading ? 'opacity-50' : 'opacity-100'
+        }`}
+    >
+      <header className="flex items-center justify-between px-4 pt-6 text-xl font-medium text-neutral-400">
+        <button
+          onClick={prevDay}
+          className="p-2 rounded-full hover:bg-neutral-800 transition-colors"
+        >
+          <FiChevronLeft size={24} />
+        </button>
+        <div
+          className="relative text-center cursor-pointer"
+          onClick={() => dateInputRef.current.click()}
+        >
+          <h1 className="text-stone-200">
+            {format(currentDate, 'EEE, do MMM')}
+          </h1>
+          <input
+            type="date"
+            ref={dateInputRef}
+            onChange={handleDateChange}
+            value={format(currentDate, 'yyyy-MM-dd')}
+            className="absolute top-0 left-0 w-full h-full opacity-0 cursor-pointer"
+            style={{ colorScheme: 'dark' }}
+          />
+        </div>
+        <button
+          onClick={nextDay}
+          className="p-2 rounded-full hover:bg-neutral-800 transition-colors"
+        >
+          <FiChevronRight size={24} />
+        </button>
+      </header>
+
+      <main className="flex-1 flex flex-col justify-start px-4 gap-3 pt-4 overflow-y-auto">
+        <div className="flex justify-between items-center gap-4">
+          <p className="font-semibold text-neutral-300 truncate">
+            {user?.fullName}
+          </p>
+          <div className="relative w-48 flex items-center">
+            <button
+              onClick={handleAddProject}
+              className="absolute left-3 top-1/2 -translate-y-1/2"
+              title="Add project"
+            >
+              <FiPlus size={20} className="text-neutral-500 hover:text-white" />
+            </button>
+            <select
+              value={selectedProjectId || ''}
+              onChange={(e) => setSelectedProjectId(e.target.value)}
+              className="w-full bg-neutral-900 border border-neutral-800 rounded-lg py-2 pl-8 pr-3 text-white appearance-none focus:outline-none focus:border-purple-500 transition"
+            >
+              {projects.map((p) => (
+                <option key={p._id} value={p._id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+
+            <FiChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 pointer-events-none" />
+          </div>
+        </div>
+
+        <TimeCard
+          label="Start Time"
+          time={startTime}
+          setTime={setStartTime}
+          accentColor="pink"
+          isEditing={isEditingStart}
+          setIsEditing={setIsEditingStart}
+        />
+        <TimeCard
+          label="End Time"
+          time={endTime}
+          setTime={setEndTime}
+          accentColor="purple"
+          isEditing={isEditingEnd}
+          setIsEditing={setIsEditingEnd}
+        />
+
+        <div className="bg-neutral-900/50 rounded-2xl p-3 border border-neutral-800 text-center">
+          <p className="text-xs text-neutral-400 mb-1">TODAY'S TOTAL</p>
+          <p className="text-4xl font-bold text-purple-400">
+            {hours}
+            <span className="text-2xl font-medium text-purple-300/80">h</span>{' '}
+            {String(minutes).padStart(2, '0')}
+            <span className="text-2xl font-medium text-purple-300/80">m</span>
+          </p>
+        </div>
+
+        <div className="flex items-center justify-around bg-neutral-900/50 rounded-2xl p-3 border border-neutral-800">
+          <div className="text-center">
+            <p className="text-xl font-bold">
+              {stats.average.hours || 0}
+              <span className="text-base">h</span> {stats.average.minutes || 0}
+              <span className="text-base">m</span>
+            </p>
+            <p className="text-xs text-neutral-400">All-time Avg</p>
+          </div>
+          <div className="text-center">
+            <p className="text-xl font-bold">
+              {stats.weekly.hours || 0}
+              <span className="text-base">h</span> {stats.weekly.minutes || 0}
+              <span className="text-base">m</span>
+            </p>
+            <p className="text-xs text-neutral-400">This Week</p>
+          </div>
+          <div className="text-center">
+            <p className="text-xl font-bold">
+              {stats.monthly.hours || 0}
+              <span className="text-base">h</span> {stats.monthly.minutes || 0}
+              <span className="text-base">m</span>
+            </p>
+            <p className="text-xs text-neutral-400">This Month</p>
+          </div>
+        </div>
+
+        <div className="bg-neutral-900/50 rounded-2xl p-3 border border-neutral-800 mt-1">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={currentDate.toString()}
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="h-6 text-center text-xs text-neutral-400 mb-2"
+            >
+              {monthData.find((d) => isSameDay(d.date, currentDate))?.hours.toFixed(1)}{' '}
+              hours on {format(currentDate, 'do MMM')}
+            </motion.div>
+          </AnimatePresence>
+          <div className="w-full h-20">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={monthData} barGap={2}>
+                <Bar dataKey="hours" shape={<RoundedBar />} onClick={onBarClick}>
+                  {monthData.map((entry, idx) => (
+                    <Cell
+                      key={idx}
+                      fill={isSameDay(entry.date, currentDate) ? '#a855f7' : '#404040'}
+                      className="cursor-pointer transition-colors"
+                    />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </main>
+      <footer className="flex sticky bottom-10 opacity-70 items-center justify-center mt-auto">
+
+        <div className="flex items-center gap-x-6 bg-neutral-900 rounded-full h-12 shadow-lg border border-neutral-800 px-6">
+          <button className="flex justify-center items-center text-purple-400 h-full">
+            <FiClock size={26} />
+          </button>
+          <button
+            onClick={() => {
+              if (selectedProject) {
+                router.push(`/calendar?name=${encodeURIComponent(selectedProject.name)}`);
+              } else {
+                router.push('/calendar');
+              }
+            }}
+
+            className="flex justify-center items-center text-neutral-500 hover:text-white transition-colors h-full"
+          >
+            <FiGrid size={24} />
+          </button>
+          <button
+            onClick={() => (window.location.href = '/settings')}
+            className="flex justify-center items-center text-neutral-500 hover:text-white transition-colors h-full"
+          >
+            <FiSettings size={24} />
+          </button>
+          <div className="h-8 border-l border-neutral-700" />
+          <div>
+            <UserButton afterSignOutUrl="/" />
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+}
+
+/* ========== pages/login/[[...index]].js ========== */
+
+// pages/login/[[...index]].js
+import { SignIn } from "@clerk/nextjs";
+import { FiClock, FiGrid } from "react-icons/fi";
+
+export default function LoginPage() {
+  return (
+    <div className="flex flex-col min-h-screen bg-neutral-950 text-white relative overflow-hidden">
+      {/* Animated Purple Glow */}
+      <div
+        className="absolute -top-24 left-1/2 -translate-x-1/2 w-[600px] h-[340px] bg-purple-600/30 rounded-full blur-3xl z-0 animate-pulse-slow"
+        style={{ filter: "blur(96px)" }}
+      />
+
+      {/* Top Brand */}
+      <div className="z-10 flex flex-col items-center mt-20">
+        <h1 className="text-5xl font-bold text-white tracking-tight flex items-center gap-3 animate-fadein-slow">
+          Time Dalo
+          <FiClock className="text-purple-500" size={32} />
+        </h1>
+        <p className="m-4 text-center text-lg text-neutral-300 font-medium animate-fadein-delay">
+          Log your time & make an Excel file, with just one click.
+          <FiGrid className="inline ml-2 text-purple-500" size={22} />
+        </p>
+      </div>
+
+      {/* Login Card */}
+      <div className="flex-1 flex flex-col items-center justify-center z-10">
+        <div className="w-full max-w-sm mt-10 rounded-2xl bg-neutral-900 border border-neutral-800 p-8 animate-cardpop">
+          <SignIn path="/login" routing="path" />
+        </div>
+      </div>
+
+      {/* Footer */}
+      <footer className="w-full text-center py-6 text-neutral-400 text-sm z-10">
+        &copy; {new Date().getFullYear()} Almanac – Tidssporing & prosjekthåndtering
+      </footer>
+
+      {/* Animations */}
+      <style jsx global>{`
+        @keyframes fadein {
+          from { opacity: 0; transform: translateY(40px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fadeinSlow {
+          from { opacity: 0; transform: translateY(60px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fadeinDelay {
+          from { opacity: 0; }
+          to   { opacity: 1; }
+        }
+        @keyframes pulseGlow {
+          0%, 100% { opacity: 0.7; }
+          50% { opacity: 1; }
+        }
+        @keyframes cardpop {
+          from { opacity: 0; transform: scale(0.96); }
+          to   { opacity: 1; transform: scale(1); }
+        }
+        .animate-fadein      { animation: fadein 1s cubic-bezier(.6,.2,.1,1) forwards; }
+        .animate-fadein-slow { animation: fadeinSlow 1.2s cubic-bezier(.6,.2,.1,1) 0.1s forwards; }
+        .animate-fadein-delay{ animation: fadeinDelay 2s cubic-bezier(.6,.2,.1,1) 0.8s forwards; opacity: 0; }
+        .animate-cardpop     { animation: cardpop 1s cubic-bezier(.6,.2,.1,1) 0.3s forwards; }
+        .animate-pulse-slow  { animation: pulseGlow 7s ease-in-out infinite; }
+      `}</style>
+    </div>
+  );
+}
+
+
+/* ========== pages/settings.js ========== */
+
+// pages/calendar.js
+
+import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/router';
+import { UserButton } from '@clerk/nextjs';
+import {
+  FiArrowLeft,
+  FiGrid,
+  FiClock,
+  FiSettings,
+  FiDownload,
+  FiShare2,
+} from 'react-icons/fi';
+import { MdIosShare } from 'react-icons/md';
+
+export default function SettingPage({ deferredPrompt, setDeferredPrompt }) {
+  const router = useRouter();
+
+  // PWA install state
+  const [isAndroid, setIsAndroid] = useState(false);
+  const [isIOS, setIsIOS] = useState(false);
+  const [showIOSModal, setShowIOSModal] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const ua = navigator.userAgent;
+    setIsAndroid(/Android/i.test(ua));
+    setIsIOS(/iPhone|iPad|iPod/i.test(ua));
+  }, []);
+
+  const handleAndroidInstall = async () => {
+    if (!deferredPrompt) {
+      alert(
+        "Installation is not available. It may already be installed or your browser isn't supported."
+      );
+      return;
+    }
+    deferredPrompt.prompt();
+    setDeferredPrompt(null);
+  };
+
+  const handleIOSInstall = () => setShowIOSModal(true);
+  const closeIOSModal = () => setShowIOSModal(false);
+
+  return (
+    <div className="bg-neutral-950 text-white w-full min-h-screen flex flex-col">
+      <header className="flex items-center justify-between px-4 pt-6">
+        <button
+          onClick={() => router.back()}
+          className="p-2 rounded-full hover:bg-neutral-800 transition"
+        >
+          <FiArrowLeft size={24} />
+        </button>
+      </header>
+
+      <main className="flex-1 px-4 py-6 overflow-y-auto">
+        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 text-center">
+          <h2 className="text-xl font-semibold text-purple-400 mb-2">
+            A Note from the Developer 🙏
+          </h2>
+          <p className="text-neutral-400 leading-relaxed">
+            Hi there! I'm the solo developer who built this app. My goal was to create a simple, beautiful tool to help us all be more mindful of our time.
+          </p>
+          <p className="text-neutral-400 leading-relaxed mt-4">
+            The app is free and will always have its core features available to everyone. If you find it valuable and wish to support its ongoing development and server costs, you can leave a small tip.
+          </p>
+          <p className="text-neutral-400 leading-relaxed mt-4">
+            A small tip helps keep the servers running and allows me to continue improving the app. Your support means a lot to me and helps ensure that this tool remains available for everyone.
+          </p>
+          <p className="text-neutral-400 leading-relaxed mt-4">
+            If you want to be a monthly supporter, you will find this information in the link below as well. Remember to check the "Make this monthly" option.
+          </p>
+          <a
+            href="https://coff.ee/aziotopicz"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-6 inline-block bg-purple-600 text-white font-bold py-3 px-6 rounded-full hover:bg-purple-700 transition-colors shadow-lg"
+          >
+            Leave a Tip
+          </a>
+          <p className="text-xs text-neutral-500 mt-4">
+            This is completely optional and doesn't unlock any extra features. Thank you for your support!
+          </p>
+        </div>
+
+        {/* ——— PWA Install Buttons ——— */}
+        <div className="mt-6 px-2 space-y-4">
+          {isAndroid && (
+            <button
+              onClick={handleAndroidInstall}
+              className="w-full py-3 bg-green-500 text-white font-medium rounded-xl shadow-md hover:bg-green-600 flex items-center justify-center"
+            >
+              <FiDownload className="mr-2" size={20} />
+              Install App
+            </button>
+          )}
+          {isIOS && (
+            <button
+              onClick={handleIOSInstall}
+              className="w-full py-3 bg-gray-900 text-white font-medium rounded-xl shadow-md hover:bg-gray-800 flex items-center justify-center"
+            >
+              <FiShare2 className="mr-2" size={20} />
+              How to Install on iOS
+            </button>
+          )}
+        </div>
+
+      </main>
+
+      <footer className="flex items-center justify-center p-4 mt-auto">
+        <div className="flex items-center gap-x-6 bg-neutral-900 rounded-full h-16 shadow-lg border border-neutral-800 px-6">
+          <button
+            onClick={() => (window.location.href = '/')}
+            className="flex justify-center items-center text-neutral-500 hover:text-white transition-colors h-full"
+          >
+            <FiClock size={26} />
+          </button>
+          <button
+          onClick={() => (window.location.href ='/calendar')}
+          className="flex justify-center items-center text-neutral-500 h-full">
+            <FiGrid size={24} />
+          </button>
+          <button
+            onClick={() => (window.location.href = '/settings')}
+            className="flex justify-center items-center text-purple-400 hover:text-white transition-colors h-full"
+          >
+            <FiSettings size={24} />
+          </button>
+          <div className="h-8 border-l border-neutral-700" />
+          <UserButton afterSignOutUrl="/" />
+        </div>
+      </footer>
+
+      {/* ——— iOS Install Modal ——— */}
+      {showIOSModal && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
+          <div className="bg-white rounded-2xl p-6 w-11/12 max-w-sm">
+            <h2 className="text-xl font-semibold mb-4">Add to Home Screen</h2>
+            <ol className="list-decimal list-inside space-y-2 text-gray-700">
+              <li>
+                Tap the Share button <MdIosShare className="inline" />
+              </li>
+              <li>Select “Add to Home Screen.”</li>
+              <li>Tap “Add” in the top-right corner.</li>
+            </ol>
+            <button
+              onClick={closeIOSModal}
+              className="mt-6 w-full py-2 border border-blue-600 text-blue-600 font-medium rounded-lg"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+/* ========== components/QrLoader.js ========== */
+
+// components/QrLoader.js
+import React from "react";
+
+export default function QrLoader({ code }) {
+  return (
+    <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-75 z-50">
+      <div className="bg-white p-8 rounded-lg shadow-lg">
+        <h1 className="text-2xl font-bold mb-4">Detected Code:</h1>
+        <p className="text-xl">{code}</p>
+      </div>
+    </div>
+  );
+}
+
+
+/* ========== lib/mongodb.js ========== */
+
+// Path: lib/mongodb.js
+
+import { MongoClient } from "mongodb";
+
+const uri = process.env.MONGODB_URI;
+const options = {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+};
+
+let client;
+let clientPromise;
+
+if (process.env.NODE_ENV === "development") {
+  if (!global._mongoClientPromise) {
+    client = new MongoClient(uri, options);
+    global._mongoClientPromise = client.connect();
+  }
+  clientPromise = global._mongoClientPromise;
+} else {
+  client = new MongoClient(uri, options);
+  clientPromise = client.connect();
+}
+
+// Check if the connection is successful
+clientPromise.then(() => console.log('Connected to MongoDB')).catch((err) => console.error('MongoDB Connection Error:', err));
+
+export default clientPromise;
+
+
+export async function connectToDatabase() {
+  const client = await clientPromise;
+  const db = client.db('timedalo');
+  return { client, db };
+}
