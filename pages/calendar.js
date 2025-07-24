@@ -161,6 +161,8 @@ function StatsModal({ stats, close }) {
 
 export default function CalendarPage() {
   const router = useRouter();
+  const { query } = useRouter();
+  const selectedProjectName = query.name;
   const { user } = useUser();
   const [projects, setProjects] = useState([]);
   const [projectId, setProjectId] = useState(null);
@@ -172,19 +174,32 @@ export default function CalendarPage() {
 
   const [dayModalDate, setDayModalDate] = useState(null);
   const [showStats, setShowStats] = useState(false);
+  const today= new Date();
+useEffect(() => {
+  (async () => {
+    const res = await fetch('/api/projects');
+    const data = await res.json();
+    if (res.ok) {
+      setProjects(data);
 
-  // fetch projects once
-  useEffect(() => {
-    (async () => {
-      const res = await fetch('/api/projects');
-      const data = await res.json();
-      if (res.ok) {
-        setProjects(data);
-        if (data.length) setProjectId(data[0]._id);
-        else setLoading(false);
+      // Get project name from URL
+      const { name } = router.query;
+      if (name) {
+        const matched = data.find(p => p.name.toLowerCase() === name.toLowerCase());
+        if (matched) {
+          setProjectId(matched._id);
+        } else {
+          setProjectId(data[0]?._id);
+        }
+      } else {
+        setProjectId(data[0]?._id);
       }
-    })();
-  }, []);
+
+      if (data.length === 0) setLoading(false);
+    }
+  })();
+}, [router.query.name]); // <-- listen for changes
+
 
   // whenever viewDate or projectId changes, fetch month data + stats
   useEffect(() => {
@@ -316,12 +331,17 @@ export default function CalendarPage() {
                   <button
                     key={day.toISOString()}
                     onClick={() => setDayModalDate(day)}
-                    className="p-2 bg-neutral-900 rounded hover:bg-neutral-800 transition flex flex-col items-center"
+                    className={`p-2 rounded flex flex-col items-center transition 
+  ${isSameDay(day, today)
+    ? 'bg-neutral-900 border-2 animate-pulse border-purple-500 hover:bg-neutral-800'
+    : 'bg-neutral-900 hover:bg-neutral-800'}
+`}
                   >
                     <span>{day.getDate()}</span>
-                    <span className="text-xs text-neutral-400">
-                      {entry ? entry.hours.toFixed(1) + 'h' : '-'}
-                    </span>
+<span className={`text-xs ${entry && entry.hours > 0 ? 'text-yellow-400 font-black' : 'text-neutral-400'}`}>
+  {entry ? entry.hours.toFixed(1) + 'h' : '-'}
+</span>
+
                   </button>
                 );
               })

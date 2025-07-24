@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useUser, UserButton } from '@clerk/nextjs';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useRouter } from 'next/router';
 import {
   format,
   addDays,
@@ -135,6 +136,7 @@ export default function Home() {
 
   const isInitialLoad = useRef(false);
   const dateInputRef = useRef(null);
+  const router = useRouter();
 
   // load projects
   useEffect(() => {
@@ -274,6 +276,7 @@ export default function Home() {
       console.error(e);
     }
   };
+  const selectedProject = projects.find((p) => p._id === selectedProjectId);
 
   return (
     <div
@@ -430,7 +433,14 @@ export default function Home() {
             <FiClock size={26} />
           </button>
           <button
-            onClick={() => (window.location.href = '/calendar')}
+            onClick={() => {
+              if (selectedProject) {
+                router.push(`/calendar?name=${encodeURIComponent(selectedProject.name)}`);
+              } else {
+                router.push('/calendar');
+              }
+            }}
+
             className="flex justify-center items-center text-neutral-500 hover:text-white transition-colors h-full"
           >
             <FiGrid size={24} />
