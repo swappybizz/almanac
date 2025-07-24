@@ -82,7 +82,7 @@ CLERK_SECRET_KEY="sk_test_..."
 ### Installation
 
 ```bash
-git clone https://github.com/yourusername/time-dalo.git
+git clone https://github.com/swappybizz/almanac
 cd time-dalo
 npm install
 ```
@@ -160,5 +160,5 @@ This project is licensed under the [MIT License](./LICENSE).
 
 ---
 
-> Built with ❤️ by [Your Name](https://github.com/yourusername)  
+> Built with ❤️ by [Swapnil](https://github.com/swappybizz)  
 > ⭐️ If you find this project useful, please give it a star!  
